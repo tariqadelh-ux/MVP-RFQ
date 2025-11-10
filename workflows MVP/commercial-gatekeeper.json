@@ -1,0 +1,408 @@
+{
+  "name": "Bin Quraya RFQ - Commercial Evaluation Gatekeeper v2",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "69cf8741-5096-4d4d-b1e9-d950f68a726c",
+      "name": "Manual Trigger (For Testing)",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -256,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes"
+            }
+          ]
+        }
+      },
+      "id": "91feacb4-7158-40f9-af26-234024c6a370",
+      "name": "Schedule Check Every 5 Minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -256,
+        368
+      ],
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "1A4p11MoSmkqwY7af9Cq3vN9HxTfZD0hfNNa1bi5YPXU"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Sheet1"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "Status",
+              "lookupValue": "Technically Approved"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "e0dec658-da7e-46fd-b5a9-770c6ed43b09",
+      "name": "Get Technically Approved Vendors",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -64,
+        256
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "PaMqLOffUaABISUn",
+          "name": "Google Sheets account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Check if we have any data from the Google Sheets node\nconst hasData = items && items.length > 0 && items[0].json && Object.keys(items[0].json).length > 0;\n\nif (!hasData) {\n  // No vendors found - return empty state\n  console.log('==========================================');\n  console.log('GATEKEEPER: No technically approved vendors found');\n  console.log('==========================================');\n  \n  return [{\n    json: {\n      vendorCount: 0,\n      approvedVendors: [],\n      shouldTriggerEvaluation: false,\n      triggerReason: 'No technically approved vendors yet',\n      daysSinceFirstApproval: 0,\n      minimumRequired: 2,\n      quorumTarget: 3,\n      timestamp: new Date().toISOString()\n    }\n  }];\n}\n\n// We have vendors - process them\nconst approvedVendors = items;\nconst vendorCount = approvedVendors.length;\n\n// Business rules for commercial evaluation\nconst MINIMUM_VENDORS_FOR_EVALUATION = 2; // At least 2 vendors needed\nconst MAXIMUM_WAIT_DAYS = 7; // Force evaluation after 7 days\n\n// Check if we have the first approved vendor's date\nlet oldestApprovalDate = null;\nlet daysSinceFirstApproval = 0;\n\nif (vendorCount > 0) {\n  // Find the oldest approval date\n  const approvalDates = approvedVendors\n    .map(v => v.json.Date_Approved)\n    .filter(d => d)\n    .sort();\n  \n  if (approvalDates.length > 0) {\n    oldestApprovalDate = new Date(approvalDates[0]);\n    const now = new Date();\n    daysSinceFirstApproval = Math.floor((now - oldestApprovalDate) / (1000 * 60 * 60 * 24));\n  }\n}\n\n// Determine if we should trigger commercial evaluation\nlet shouldTriggerEvaluation = false;\nlet triggerReason = '';\n\nif (vendorCount >= 3) {\n  shouldTriggerEvaluation = true;\n  triggerReason = 'Quorum reached (3 vendors)';\n} else if (vendorCount >= MINIMUM_VENDORS_FOR_EVALUATION && daysSinceFirstApproval >= MAXIMUM_WAIT_DAYS) {\n  shouldTriggerEvaluation = true;\n  triggerReason = `Timeout reached (${MAXIMUM_WAIT_DAYS} days with ${vendorCount} vendors)`;\n} else if (vendorCount > 0 && vendorCount < MINIMUM_VENDORS_FOR_EVALUATION) {\n  triggerReason = `Waiting for more vendors (have ${vendorCount}, need ${MINIMUM_VENDORS_FOR_EVALUATION})`;\n} else if (vendorCount >= MINIMUM_VENDORS_FOR_EVALUATION) {\n  triggerReason = `Have ${vendorCount} vendors, waiting for quorum of 3 or timeout (${daysSinceFirstApproval}/${MAXIMUM_WAIT_DAYS} days)`;\n}\n\nconsole.log('==========================================');\nconsole.log('GATEKEEPER CHECK');\nconsole.log('Vendor Count:', vendorCount);\nconsole.log('Decision:', shouldTriggerEvaluation ? 'TRIGGER' : 'WAIT');\nconsole.log('Reason:', triggerReason);\nconsole.log('==========================================');\n\nreturn [{\n  json: {\n    vendorCount,\n    approvedVendors: approvedVendors.map(v => ({\n      name: v.json.Vendor_Name,\n      email: v.json.Vendor_Email,\n      approvalDate: v.json.Date_Approved,\n      materialGrade: v.json.Material_Grade,\n      rfqId: v.json.RFQ_ID\n    })),\n    shouldTriggerEvaluation,\n    triggerReason,\n    daysSinceFirstApproval,\n    minimumRequired: MINIMUM_VENDORS_FOR_EVALUATION,\n    quorumTarget: 3,\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "7dec20ba-fa51-4942-a1da-7c6b6eae6a21",
+      "name": "Check Quorum Logic (With Zero Handling)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        144,
+        256
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.shouldTriggerEvaluation }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "f6dc9fac-e5b8-49fe-a77c-ae5290c5af53",
+      "name": "Should Trigger Evaluation?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        352,
+        256
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "binquraya.procurement.demo+management@gmail.com",
+        "subject": "=🎯 Commercial Evaluation Ready - {{ $json.vendorCount }} Vendors Approved",
+        "message": "=<html>\n<body style='font-family: \"Segoe UI\", Tahoma, Geneva, Verdana, sans-serif;'>\n<div style='max-width: 700px; margin: 0 auto; padding: 20px;'>\n    <div style='background: linear-gradient(135deg, #2c3e50 0%, #1a252f 100%); color: white; padding: 30px; border-radius: 8px 8px 0 0; text-align: center;'>\n        <img src='https://drive.google.com/uc?export=view&id=1eKki6KsEVObBe6xc_b1zYibDqVloE416' alt='Bin Quraya' style='max-width: 180px; margin-bottom: 20px;'>\n        <h2 style='margin: 0; letter-spacing: 1px;'>✅ COMMERCIAL EVALUATION TRIGGERED</h2>\n    </div>\n    <div style='border: 1px solid #ddd; padding: 30px; border-radius: 0 0 8px 8px; background: white;'>\n        <p>The gatekeeper has triggered commercial evaluation with the following status:</p>\n        \n        <div style='background: #f0f8ff; padding: 15px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #2c5aa0;'>\n            <p><strong>🔔 Trigger Reason:</strong> {{ $json.triggerReason }}</p>\n            <p><strong>👥 Approved Vendors:</strong> {{ $json.vendorCount }}</p>\n            <p><strong>📅 Days Since First Approval:</strong> {{ $json.daysSinceFirstApproval }}</p>\n            <p><strong>⏰ Timestamp:</strong> {{ $json.timestamp }}</p>\n        </div>\n        \n        <h3 style='color: #2c5aa0;'>Approved Vendors Ready for Evaluation:</h3>\n        <table style='width: 100%; border-collapse: collapse;'>\n            <tr style='background: #f5f5f5;'>\n                <th style='padding: 10px; border: 1px solid #ddd; text-align: left;'>Vendor Name</th>\n                <th style='padding: 10px; border: 1px solid #ddd; text-align: left;'>Email</th>\n                <th style='padding: 10px; border: 1px solid #ddd; text-align: left;'>Approval Date</th>\n            </tr>\n            {{ $json.approvedVendors.map(v => '<tr><td style=\"padding: 10px; border: 1px solid #ddd;\">' + v.name + '</td><td style=\"padding: 10px; border: 1px solid #ddd;\">' + v.email + '</td><td style=\"padding: 10px; border: 1px solid #ddd;\">' + v.approvalDate + '</td></tr>').join('') }}\n        </table>\n        \n        <div style='background: #fff9e6; padding: 15px; border-radius: 8px; margin: 20px 0; border: 1px solid #ffd700;'>\n            <p style='margin: 0;'><strong>⚡ Next Step:</strong> The commercial evaluation workflow will now process these vendors and generate a decision package for your review.</p>\n        </div>\n    </div>\n    \n    <div style='background: #f8f9fa; padding: 20px; text-align: center; border-top: 3px solid #2c5aa0; margin-top: 20px;'>\n        <p style='margin: 5px 0; color: #666;'><strong>Bin Quraya Management & Trading</strong></p>\n        <p style='margin: 5px 0; color: #666;'>Dhahran, Saudi Arabia</p>\n        <div style='margin-top: 15px; padding-top: 15px; border-top: 1px solid #ddd;'>\n            <img src='https://drive.google.com/uc?export=view&id=1vdzoOdNbRHB6f0vFOaaOibfEkFGtCzzx' alt='Powered by Davon' style='max-width: 100px; opacity: 0.8;'>\n            <p style='color: #999; font-size: 12px; margin-top: 10px;'>Powered by the davon Decision Intelligence Engine</p>\n        </div>\n    </div>\n</div>\n</body>\n</html>",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "32fae6d9-2fe3-41f3-b074-ab1dfa9f563d",
+      "name": "Notify Management - Evaluation Started",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        544,
+        160
+      ],
+      "webhookId": "7c2daf5f-5b8b-4690-bf0a-029b9921dc41",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "zxi9fBhWaVy2UkSW",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Log the gatekeeper decision to console\nconst input = items[0].json;\nconst logEntry = {\n  timestamp: input.timestamp,\n  action: 'Gatekeeper Check',\n  vendorCount: input.vendorCount,\n  decision: input.shouldTriggerEvaluation ? '✅ TRIGGER EVALUATION' : '⏳ WAIT',\n  reason: input.triggerReason,\n  daysSinceFirstApproval: input.daysSinceFirstApproval,\n  vendors: input.approvedVendors\n};\n\nconsole.log('==========================================');\nconsole.log('GATEKEEPER DECISION LOG');\nconsole.log('==========================================');\nconsole.log('Timestamp:', logEntry.timestamp);\nconsole.log('Decision:', logEntry.decision);\nconsole.log('Reason:', logEntry.reason);\nconsole.log('Vendor Count:', logEntry.vendorCount);\nconsole.log('Days Since First Approval:', logEntry.daysSinceFirstApproval);\nif (logEntry.vendors.length > 0) {\n  console.log('Vendors:', JSON.stringify(logEntry.vendors, null, 2));\n} else {\n  console.log('Vendors: None');\n}\nconsole.log('==========================================');\n\nreturn [{ json: logEntry }];"
+      },
+      "id": "86e2832e-674c-4559-8b6e-7a6619a9016e",
+      "name": "Log Gatekeeper Decision",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        544,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "1A4p11MoSmkqwY7af9Cq3vN9HxTfZD0hfNNa1bi5YPXU",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "GatekeeperLog",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Timestamp": "={{ $json.timestamp }}",
+            "Action": "={{ $json.action }}",
+            "Vendor_Count": "={{ $json.vendorCount }}",
+            "Decision": "={{ $json.decision }}",
+            "Reason": "={{ $json.reason }}",
+            "Days_Since_First": "={{ $json.daysSinceFirstApproval }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Timestamp",
+              "displayName": "Timestamp",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Action",
+              "displayName": "Action",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Vendor_Count",
+              "displayName": "Vendor_Count",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Decision",
+              "displayName": "Decision",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Reason",
+              "displayName": "Reason",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Days_Since_First",
+              "displayName": "Days_Since_First",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "4d9475f8-4e81-40be-a911-444f8063bf12",
+      "name": "Log to Gatekeeper Sheet (Create if needed)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        752,
+        368
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "PaMqLOffUaABISUn",
+          "name": "Google Sheets account"
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Placeholder for triggering the commercial evaluation workflow\n// In production, this would be an Execute Workflow node\n// For now, we'll simulate the trigger\n\nconst vendors = $json.approvedVendors;\nconst message = `\n🚀 COMMERCIAL EVALUATION TRIGGERED!\n======================================\nProcessing ${vendors.length} vendors for commercial scoring:\n\n${vendors.map((v, i) => `${i+1}. ${v.name} (${v.email})`).join('\\n')}\n\n✅ The Commercial Evaluation workflow would now:\n1. Download vendor offer documents from Google Drive\n2. Apply weighted scoring model (Price, Delivery, Terms)\n3. Generate decision package with recommendation\n4. Send to management dashboard for final approval\n\n📝 NOTE: This is a placeholder node.\nReplace with Execute Workflow node once Workflow 4 is built.\nWorkflow 4 ID will be added here.\n`;\n\nconsole.log(message);\n\nreturn [{ \n  json: { \n    status: 'Commercial evaluation initiated',\n    vendorsToEvaluate: vendors,\n    nextStep: 'Execute Commercial Evaluation Workflow (Workflow 4)',\n    placeholderNote: 'Replace this node with Execute Workflow node pointing to Workflow 4'\n  } \n}];"
+      },
+      "id": "400fdd9f-bf5d-4b9a-aa42-56e88c9968c0",
+      "name": "Trigger Commercial Evaluation (Placeholder)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        960,
+        160
+      ],
+      "notesInFlow": true,
+      "notes": "⚠️ PLACEHOLDER NODE\n\nReplace this with Execute Workflow node once Workflow 4 (Commercial Evaluation) is built.\n\nConfiguration needed:\n- Workflow ID: [Will be Workflow 4 ID]\n- Pass vendor data as input"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:3001/api/webhooks/status",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"event\": \"EVALUATION_STARTED\",\n  \"rfqId\": \"450-012547\",\n  \"approvedVendors\": \"{{$json.vendorCount}}\",\n  \"details\": \"Commercial evaluation triggered\",\n  \"timestamp\": \"{{$now.toISO()}}\",\n  \"projectId\": \"001\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        752,
+        160
+      ],
+      "id": "a935ddca-a0fc-4b2f-8138-08a4eca6f5c0",
+      "name": "HTTP Request"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Manual Trigger (For Testing)": {
+      "main": [
+        [
+          {
+            "node": "Get Technically Approved Vendors",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule Check Every 5 Minutes": {
+      "main": [
+        [
+          {
+            "node": "Get Technically Approved Vendors",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Technically Approved Vendors": {
+      "main": [
+        [
+          {
+            "node": "Check Quorum Logic (With Zero Handling)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Quorum Logic (With Zero Handling)": {
+      "main": [
+        [
+          {
+            "node": "Should Trigger Evaluation?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Should Trigger Evaluation?": {
+      "main": [
+        [
+          {
+            "node": "Notify Management - Evaluation Started",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log Gatekeeper Decision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Management - Evaluation Started": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Gatekeeper Decision": {
+      "main": [
+        [
+          {
+            "node": "Log to Gatekeeper Sheet (Create if needed)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Trigger Commercial Evaluation (Placeholder)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "f453b35d-bbe1-40d1-85b7-4c826fe5aed3",
+  "meta": {
+    "instanceId": "5ff48a5b518af62534474e14d71c65115a3f49ab46ef1ddaf82c3d8f27abe8ab"
+  },
+  "id": "rmMLVbt0a3pPKQWW",
+  "tags": []
+}

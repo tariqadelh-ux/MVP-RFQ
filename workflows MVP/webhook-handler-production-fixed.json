@@ -1,0 +1,1015 @@
+{
+  "name": "RFQ Webhook Handler - Production",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "rfq-decision",
+        "responseMode": "responseNode",
+        "options": {
+          "cors": true
+        }
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook - Dashboard Actions",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        250,
+        300
+      ],
+      "webhookId": "rfq-decision-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse and validate incoming webhook data\nconst webhookData = $json.body || $json;\n\n// Extract fields with validation\nconst action = webhookData.action || '';\nconst rfqId = webhookData.rfqId || '';\nconst vendorId = webhookData.vendorId || '';\nconst vendorName = webhookData.vendorName || '';\nconst userId = webhookData.userId || 'system';\nconst comments = webhookData.comments || '';\nconst timestamp = new Date().toISOString();\n\n// Validate required fields\nif (!action || !rfqId) {\n  throw new Error('Missing required fields: action and rfqId are mandatory');\n}\n\n// Validate action type\nconst validActions = ['APPROVE_PO', 'REJECT_ALL', 'REQUEST_NEGOTIATION'];\nif (!validActions.includes(action)) {\n  throw new Error(`Invalid action: ${action}. Must be one of: ${validActions.join(', ')}`);\n}\n\n// For APPROVE_PO and REQUEST_NEGOTIATION, vendor info is required\nif ((action === 'APPROVE_PO' || action === 'REQUEST_NEGOTIATION') && !vendorId) {\n  throw new Error(`${action} requires vendorId`);\n}\n\nreturn [{\n  json: {\n    action,\n    rfqId,\n    vendorId,\n    vendorName,\n    userId,\n    comments,\n    timestamp,\n    processedData: {\n      action_type: action,\n      rfq_id: rfqId,\n      vendor_id: vendorId,\n      vendor_name: vendorName,\n      approved_by: userId,\n      comments: comments,\n      processed_at: timestamp\n    }\n  }\n}];"
+      },
+      "id": "validate-request",
+      "name": "Validate Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        450,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "APPROVE_PO",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "APPROVE_PO"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "REJECT_ALL",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "REJECT_ALL"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "REQUEST_NEGOTIATION",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "REQUEST_NEGOTIATION"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "route-by-action",
+      "name": "Route by Action",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.3,
+      "position": [
+        650,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/vendor_offers",
+        "authentication": "genericCredentialType",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "select",
+              "value": "*,vendors(*)"
+            },
+            {
+              "name": "rfq_id",
+              "value": "eq.{{ $json.rfqId }}"
+            },
+            {
+              "name": "vendor_id",
+              "value": "eq.{{ $json.vendorId }}"
+            }
+          ]
+        },
+        "options": {},
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_ANON_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        }
+      },
+      "id": "get-winner-details",
+      "name": "Supabase - Get Winner Details",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        850,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Generate Purchase Order\nconst offer = $json[0];\nconst vendor = offer.vendors;\nconst poNumber = `PO-${$('validate-request').item.json.rfqId}-${Date.now().toString().slice(-6)}`;\nconst currentDate = new Date();\nconst deliveryDate = new Date();\ndeliveryDate.setDate(deliveryDate.getDate() + parseInt(offer.delivery_days));\n\nreturn [{\n  json: {\n    po_number: poNumber,\n    rfq_id: offer.rfq_id,\n    vendor_id: offer.vendor_id,\n    vendor_name: vendor.vendor_name,\n    vendor_email: vendor.vendor_email,\n    contact_person: vendor.contact_person,\n    material_description: offer.material_description || 'High-Pressure Shell & Tube Heat Exchanger',\n    material_grade: offer.material_offered,\n    quantity: offer.quantity || 1,\n    unit_price: offer.unit_price,\n    total_price: offer.total_price,\n    currency: offer.currency,\n    payment_terms: offer.payment_terms,\n    delivery_days: offer.delivery_days,\n    delivery_date: deliveryDate.toISOString(),\n    warranty_months: offer.warranty_months,\n    incoterms: offer.incoterms || 'DDP',\n    issued_date: currentDate.toISOString(),\n    issued_by: $('validate-request').item.json.userId,\n    special_instructions: $('validate-request').item.json.comments || 'Standard terms apply'\n  }\n}];"
+      },
+      "id": "generate-po",
+      "name": "Generate PO Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1050,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "chat",
+        "operation": "complete",
+        "options": {
+          "temperature": 0.3,
+          "maxTokens": 1500
+        },
+        "simplifyOutput": true,
+        "model": {
+          "__rl": true,
+          "value": "gpt-4o",
+          "mode": "list"
+        },
+        "messages": {
+          "values": [
+            {
+              "role": "system",
+              "content": "You are a procurement specialist creating professional purchase order emails. Be formal, clear, and include all necessary commercial details."
+            },
+            {
+              "role": "user",
+              "content": "Create a professional purchase order email with these details:\n\nPO Number: {{ $json.po_number }}\nVendor: {{ $json.vendor_name }}\nContact: {{ $json.contact_person }}\nMaterial: {{ $json.material_description }}\nGrade: {{ $json.material_grade }}\nQuantity: {{ $json.quantity }} units\nUnit Price: {{ $json.currency }} {{ $json.unit_price }}\nTotal: {{ $json.currency }} {{ $json.total_price }}\nDelivery: {{ $json.delivery_days }} days\nPayment: {{ $json.payment_terms }}\nWarranty: {{ $json.warranty_months }} months\nIncoterms: {{ $json.incoterms }}\n\nGenerate a formal PO email body (HTML format) that includes:\n1. Professional greeting\n2. PO confirmation with all details\n3. Required documentation (MTC, test certificates)\n4. Delivery instructions\n5. Payment process\n6. Contact information\n7. Professional closing"
+            }
+          ]
+        }
+      },
+      "id": "generate-po-email",
+      "name": "ChatGPT 5 - Generate PO Email",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1.1,
+      "position": [
+        1250,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Generate PO Data').item.json.vendor_email }}",
+        "subject": "=Purchase Order {{ $('Generate PO Data').item.json.po_number }} - {{ $('Generate PO Data').item.json.material_description }}",
+        "emailType": "html",
+        "message": "={{ $json.message.content }}",
+        "options": {
+          "appendAttribution": false,
+          "cc": "binquraya.procurement.demo@gmail.com"
+        }
+      },
+      "id": "send-po",
+      "name": "Send PO to Winner",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        1450,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/vendor_offers",
+        "authentication": "genericCredentialType",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "select",
+              "value": "vendor_id,vendor_name,vendors(vendor_email)"
+            },
+            {
+              "name": "rfq_id",
+              "value": "eq.{{ $json.rfqId }}"
+            }
+          ]
+        },
+        "options": {},
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_ANON_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        }
+      },
+      "id": "get-all-vendors",
+      "name": "Supabase - Get All Vendors",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        850,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.vendors.vendor_email }}",
+        "subject": "=RFQ {{ $('Validate Request').item.json.rfqId }} - Regret Notice",
+        "emailType": "html",
+        "message": "=<!DOCTYPE html>\n<html>\n<head>\n  <style>\n    body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }\n    .container { max-width: 700px; margin: 0 auto; }\n    .header { background: linear-gradient(135deg, #2c3e50, #1a252f); color: white; padding: 30px; text-align: center; }\n    .content { background: white; padding: 30px; border: 1px solid #ddd; }\n    .message-box { background: #fff3e6; border-left: 4px solid #ff9800; padding: 20px; margin: 20px 0; }\n  </style>\n</head>\n<body>\n  <div class=\"container\">\n    <div class=\"header\">\n      <h1>RFQ OUTCOME NOTIFICATION</h1>\n    </div>\n    \n    <div class=\"content\">\n      <div class=\"message-box\">\n        <strong>RFQ Reference:</strong> {{ $('Validate Request').item.json.rfqId }}\n      </div>\n      \n      <p>Dear {{ $json.vendor_name }},</p>\n      \n      <p>Thank you for your participation in our recent RFQ for the High-Pressure Shell & Tube Heat Exchanger.</p>\n      \n      <p>After careful evaluation of all submitted offers, we regret to inform you that your quotation has not been selected for this procurement.</p>\n      \n      {{ $('Validate Request').item.json.comments ? '<p><strong>Additional Comments:</strong> ' + $('Validate Request').item.json.comments + '</p>' : '' }}\n      \n      <p>We sincerely appreciate the time and effort you invested in preparing your proposal. Your participation is valued, and we look forward to future opportunities to work together.</p>\n      \n      <p>Best regards,<br>\n      <strong>Bin Quraya Procurement Department</strong></p>\n    </div>\n  </div>\n</body>\n</html>",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "send-regret-letters",
+      "name": "Send Regret Letters",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        1050,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/vendor_offers",
+        "authentication": "genericCredentialType",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "select",
+              "value": "*,vendors(*)"
+            },
+            {
+              "name": "rfq_id",
+              "value": "eq.{{ $json.rfqId }}"
+            },
+            {
+              "name": "vendor_id",
+              "value": "eq.{{ $json.vendorId }}"
+            }
+          ]
+        },
+        "options": {},
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_ANON_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        }
+      },
+      "id": "get-negotiation-vendor",
+      "name": "Supabase - Get Vendor for Negotiation",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        850,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json[0].vendors.vendor_email }}",
+        "subject": "=Negotiation Request - RFQ {{ $('Validate Request').item.json.rfqId }}",
+        "emailType": "html",
+        "message": "=<!DOCTYPE html>\n<html>\n<head>\n  <style>\n    body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }\n    .container { max-width: 700px; margin: 0 auto; }\n    .header { background: linear-gradient(135deg, #2c3e50, #1a252f); color: white; padding: 30px; text-align: center; }\n    .content { background: white; padding: 30px; border: 1px solid #ddd; }\n    .highlight-box { background: #e8f5e9; border-left: 4px solid #4caf50; padding: 20px; margin: 20px 0; }\n    .negotiation-box { background: #fff9e6; border: 1px solid #ffd700; padding: 20px; margin: 20px 0; }\n  </style>\n</head>\n<body>\n  <div class=\"container\">\n    <div class=\"header\">\n      <h1>NEGOTIATION REQUEST</h1>\n    </div>\n    \n    <div class=\"content\">\n      <div class=\"highlight-box\">\n        <strong>✓ Your offer is under serious consideration</strong>\n      </div>\n      \n      <p>Dear {{ $json[0].vendor_name }},</p>\n      \n      <p>Thank you for your competitive quotation for the High-Pressure Shell & Tube Heat Exchanger (RFQ: {{ $('Validate Request').item.json.rfqId }}).</p>\n      \n      <p>Your technical proposal meets our requirements and your commercial terms have been carefully evaluated. We would like to proceed with your company, pending some adjustments to the commercial terms.</p>\n      \n      <div class=\"negotiation-box\">\n        <p><strong>Requested Improvements:</strong></p>\n        <p>{{ $('Validate Request').item.json.comments || 'We would appreciate if you could review the following aspects of your offer:\\n- Delivery timeline\\n- Payment terms\\n- Unit pricing' }}</p>\n      </div>\n      \n      <p>Current offer summary:</p>\n      <ul>\n        <li>Price: {{ $json[0].currency }} {{ $json[0].unit_price }} per unit</li>\n        <li>Delivery: {{ $json[0].delivery_days }} days</li>\n        <li>Payment: {{ $json[0].payment_terms }}</li>\n      </ul>\n      \n      <p><strong>Response Timeline:</strong> Please submit your revised offer within <strong>48 hours</strong>.</p>\n      \n      <p>We appreciate your flexibility and look forward to your response.</p>\n      \n      <p>Best regards,<br>\n      <strong>Bin Quraya Procurement Department</strong></p>\n    </div>\n  </div>\n</body>\n</html>",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "send-negotiation-request",
+      "name": "Send Negotiation Request",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        1050,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/purchase_orders",
+        "authentication": "genericCredentialType",
+        "sendBody": true,
+        "options": {},
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_ANON_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "bodyParameters": {
+          "parameters": []
+        }
+      },
+      "id": "create-po-record",
+      "name": "Supabase - Create PO Record",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1650,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/vendor_offers",
+        "authentication": "genericCredentialType",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "rfq_id",
+              "value": "eq.{{ $('Validate Request').item.json.rfqId }}"
+            },
+            {
+              "name": "vendor_id",
+              "value": "eq.{{ $('Validate Request').item.json.vendorId }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "offer_status",
+              "value": "awarded"
+            },
+            {
+              "name": "po_number",
+              "value": "={{ $('Generate PO Data').item.json.po_number }}"
+            },
+            {
+              "name": "po_issued_at",
+              "value": "={{ new Date().toISOString() }}"
+            }
+          ]
+        },
+        "options": {},
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_ANON_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        }
+      },
+      "id": "update-winner-status",
+      "name": "Supabase - Update Winner Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1850,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/vendor_offers",
+        "authentication": "genericCredentialType",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "rfq_id",
+              "value": "eq.{{ $('Validate Request').item.json.rfqId }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "offer_status",
+              "value": "rejected"
+            },
+            {
+              "name": "rejection_reason",
+              "value": "={{ $('Validate Request').item.json.comments || 'Not selected' }}"
+            },
+            {
+              "name": "rejected_at",
+              "value": "={{ new Date().toISOString() }}"
+            }
+          ]
+        },
+        "options": {},
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_ANON_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        }
+      },
+      "id": "update-all-rejected",
+      "name": "Supabase - Update All as Rejected",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1250,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/vendor_offers",
+        "authentication": "genericCredentialType",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "rfq_id",
+              "value": "eq.{{ $('Validate Request').item.json.rfqId }}"
+            },
+            {
+              "name": "vendor_id",
+              "value": "eq.{{ $('Validate Request').item.json.vendorId }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "offer_status",
+              "value": "negotiation"
+            },
+            {
+              "name": "negotiation_notes",
+              "value": "={{ $('Validate Request').item.json.comments }}"
+            },
+            {
+              "name": "negotiation_requested_at",
+              "value": "={{ new Date().toISOString() }}"
+            }
+          ]
+        },
+        "options": {},
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_ANON_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        }
+      },
+      "id": "update-negotiation-status",
+      "name": "Supabase - Update Negotiation Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1250,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/rfq_events",
+        "authentication": "genericCredentialType",
+        "sendBody": true,
+        "options": {},
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_ANON_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "bodyParameters": {
+          "parameters": []
+        }
+      },
+      "id": "log-event",
+      "name": "Supabase - Log Event",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1850,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/rfq_requests",
+        "authentication": "genericCredentialType",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "rfq_id",
+              "value": "eq.{{ $('Validate Request').item.json.rfqId }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "status",
+              "value": "={{ $('Validate Request').item.json.action === 'APPROVE_PO' ? 'po_issued' : $('Validate Request').item.json.action === 'REJECT_ALL' ? 'rejected' : 'negotiation_in_progress' }}"
+            },
+            {
+              "name": "decision_date",
+              "value": "={{ new Date().toISOString() }}"
+            },
+            {
+              "name": "decision_by",
+              "value": "={{ $('Validate Request').item.json.userId }}"
+            }
+          ]
+        },
+        "options": {},
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_ANON_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        }
+      },
+      "id": "update-rfq-status",
+      "name": "Supabase - Update RFQ Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2050,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Prepare success response\nconst action = $('validate-request').item.json.action;\nlet message = '';\n\nswitch(action) {\n  case 'APPROVE_PO':\n    message = `Purchase Order ${$('generate-po').item.json.po_number} issued successfully`;\n    break;\n  case 'REJECT_ALL':\n    message = 'All vendors have been notified of rejection';\n    break;\n  case 'REQUEST_NEGOTIATION':\n    message = 'Negotiation request sent to vendor';\n    break;\n}\n\nreturn [{\n  json: {\n    success: true,\n    action: action,\n    rfq_id: $('validate-request').item.json.rfqId,\n    message: message,\n    timestamp: new Date().toISOString(),\n    details: {\n      po_number: action === 'APPROVE_PO' ? $('generate-po').item.json.po_number : null,\n      vendor_id: $('validate-request').item.json.vendorId,\n      vendor_name: $('validate-request').item.json.vendorName\n    }\n  }\n}];"
+      },
+      "id": "prepare-response",
+      "name": "Prepare Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2250,
+        400
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "webhook-response",
+      "name": "Webhook Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        2450,
+        400
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "error-trigger",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        250,
+        700
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/workflow_executions",
+        "authentication": "genericCredentialType",
+        "sendBody": true,
+        "options": {},
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_ANON_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "bodyParameters": {
+          "parameters": []
+        }
+      },
+      "id": "log-error",
+      "name": "Supabase - Log Error",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        450,
+        700
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/rfq_events",
+        "authentication": "genericCredentialType",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "order",
+              "value": "event_timestamp.desc"
+            },
+            {
+              "name": "limit",
+              "value": "100"
+            }
+          ]
+        },
+        "options": {},
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_ANON_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        }
+      },
+      "id": "dashboard-status-webhook",
+      "name": "Get Recent Events (Dashboard)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        250,
+        900
+      ],
+      "disabled": true,
+      "notes": "This node can be used for a separate webhook endpoint to fetch dashboard status"
+    }
+  ],
+  "connections": {
+    "webhook-trigger": {
+      "main": [
+        [
+          {
+            "node": "validate-request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "validate-request": {
+      "main": [
+        [
+          {
+            "node": "route-by-action",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "route-by-action": {
+      "main": [
+        [
+          {
+            "node": "get-winner-details",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "get-all-vendors",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "get-negotiation-vendor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "get-winner-details": {
+      "main": [
+        [
+          {
+            "node": "generate-po",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "generate-po": {
+      "main": [
+        [
+          {
+            "node": "generate-po-email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "generate-po-email": {
+      "main": [
+        [
+          {
+            "node": "send-po",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "send-po": {
+      "main": [
+        [
+          {
+            "node": "create-po-record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "create-po-record": {
+      "main": [
+        [
+          {
+            "node": "update-winner-status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "update-winner-status": {
+      "main": [
+        [
+          {
+            "node": "log-event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "get-all-vendors": {
+      "main": [
+        [
+          {
+            "node": "send-regret-letters",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "send-regret-letters": {
+      "main": [
+        [
+          {
+            "node": "update-all-rejected",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "update-all-rejected": {
+      "main": [
+        [
+          {
+            "node": "log-event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "get-negotiation-vendor": {
+      "main": [
+        [
+          {
+            "node": "send-negotiation-request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "send-negotiation-request": {
+      "main": [
+        [
+          {
+            "node": "update-negotiation-status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "update-negotiation-status": {
+      "main": [
+        [
+          {
+            "node": "log-event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "log-event": {
+      "main": [
+        [
+          {
+            "node": "update-rfq-status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "update-rfq-status": {
+      "main": [
+        [
+          {
+            "node": "prepare-response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "prepare-response": {
+      "main": [
+        [
+          {
+            "node": "webhook-response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "error-trigger": {
+      "main": [
+        [
+          {
+            "node": "log-error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveExecutionProgress": true,
+    "saveManualExecutions": true,
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "executionTimeout": 300,
+    "timezone": "Asia/Riyadh"
+  }
+}

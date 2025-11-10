@@ -1,0 +1,1856 @@
+{
+  "name": "Main Processor AI",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyX",
+              "value": 5,
+              "unit": "minutes"
+            }
+          ]
+        },
+        "simple": false,
+        "filters": {
+          "q": "subject:(RFQ OR procurement)",
+          "readStatus": "unread",
+          "sender": "binquraya.procurement.demo+management@gmail.com"
+        },
+        "options": {
+          "dataPropertyAttachmentsPrefixName": "attachment_",
+          "downloadAttachments": true
+        }
+      },
+      "id": "c932d71d-721e-416f-bfe1-1fd7588be7e6",
+      "name": "Monitor Procurement Emails",
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        -18608,
+        4048
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "iT30tmeGyQmVG6Bt",
+          "name": "Gmail account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "id-1",
+              "name": "managementDomain",
+              "value": "binquraya.procurement.demo+management@gmail.com",
+              "type": "string"
+            },
+            {
+              "id": "id-2",
+              "name": "procurementTeamEmail",
+              "value": "binquraya.procurement.demo@gmail.com",
+              "type": "string"
+            },
+            {
+              "id": "id-3",
+              "name": "defaultVendorEmails",
+              "value": "vendor.a.demo@gmail.com,vendor.b.demo@gmail.com,vendor.c.demo@gmail.com",
+              "type": "string"
+            },
+            {
+              "id": "id-4",
+              "name": "submissionDeadlineDays",
+              "value": 7,
+              "type": "number"
+            },
+            {
+              "id": "id-5",
+              "name": "devTeamEmail",
+              "value": "Tariq.alhashim@davonmt.com",
+              "type": "string"
+            },
+            {
+              "id": "id-6",
+              "name": "projectInitiationFolderId",
+              "value": "1ApIYu-Gwng55rT4Isb2AKgrAS03-T1y8",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "08a9118f-766f-4546-8447-3b7279ad702a",
+      "name": "Workflow Configuration",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -18384,
+        4048
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Check if email has already been processed by looking for 'RFQ_PROCESSED' label\nconst items = $input.all();\nconst processedItems = [];\n\nfor (const item of items) {\n  const labels = item.json.labelIds || [];\n  const alreadyProcessed = labels.includes('RFQ_PROCESSED');\n  \n  processedItems.push({\n    json: {\n      ...item.json,\n      alreadyProcessed: alreadyProcessed\n    },\n    binary: item.binary || {}  // IMPORTANT: Pass the binary data through!\n  });\n}\n\nreturn processedItems;"
+      },
+      "id": "b55171f8-b6b2-40b4-811b-fb4cf1057c17",
+      "name": "Check If Already Processed",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -18160,
+        4048
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "id-1",
+              "leftValue": "={{ $('Check If Already Processed').item.json.alreadyProcessed }}",
+              "rightValue": false,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "0ff4816d-3909-444c-823b-7591af4cc174",
+      "name": "Is Email Already Processed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -17936,
+        4048
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst outputItems = [];\n\nfor (const item of items) {\n  const emailData = item.json;\n  \n  // Extract basic email information\n  const emailContent = {\n    subject: emailData.subject || '',\n    sender: emailData.from || '',\n    bodyText: emailData.text || emailData.textPlain || '',\n    bodyHtml: emailData.html || emailData.textHtml || '',\n    messageId: emailData.id || emailData.messageId || '',\n    receivedDate: emailData.date || emailData.internalDate || new Date().toISOString()\n  };\n  \n  // Check for PDF attachments in binary data\n  if (item.binary) {\n    // Find all binary properties that are PDFs\n    const binaryKeys = Object.keys(item.binary);\n    const pdfKeys = binaryKeys.filter(key => {\n      const binary = item.binary[key];\n      return binary && (\n        binary.mimeType === 'application/pdf' ||\n        (binary.fileName && binary.fileName.toLowerCase().endsWith('.pdf'))\n      );\n    });\n    \n    if (pdfKeys.length > 0) {\n      // Function to score PDF relevance based on filename\n      const scorePdfRelevance = (filename) => {\n        const lowerFilename = (filename || '').toLowerCase();\n        let score = 0;\n        \n        const highPriorityKeywords = ['rfq', 'procurement', 'memo', 'request', 'purchase', 'requisition'];\n        const mediumPriorityKeywords = ['material', 'specification', 'requirement', 'order'];\n        \n        highPriorityKeywords.forEach(keyword => {\n          if (lowerFilename.includes(keyword)) score += 10;\n        });\n        \n        mediumPriorityKeywords.forEach(keyword => {\n          if (lowerFilename.includes(keyword)) score += 5;\n        });\n        \n        return score;\n      };\n      \n      // Score and sort PDFs by relevance\n      const scoredPdfs = pdfKeys.map(key => ({\n        key: key,\n        binary: item.binary[key],\n        relevanceScore: scorePdfRelevance(item.binary[key].fileName || '')\n      })).sort((a, b) => b.relevanceScore - a.relevanceScore);\n      \n      // Get the primary PDF (highest score)\n      const primaryPdf = scoredPdfs[0];\n      const pdfFileName = primaryPdf.binary.fileName || 'attachment.pdf';\n      const pdfFileSize = primaryPdf.binary.fileSize || 0;\n      \n      // Collect all PDF names for metadata\n      const allPdfNames = scoredPdfs.map(pdf => pdf.binary.fileName || 'unnamed.pdf').join(', ');\n      \n      // IMPORTANT: Pass the binary with 'data' key properly\n      outputItems.push({\n        json: {\n          ...emailContent,\n          attachmentName: pdfFileName,\n          attachmentSize: pdfFileSize,\n          primaryPdfName: pdfFileName,\n          allPdfAttachments: allPdfNames,\n          pdfCount: pdfKeys.length,\n          multiplePdfsFound: pdfKeys.length > 1,\n          allPdfMetadata: scoredPdfs.map(pdf => ({\n            filename: pdf.binary.fileName || 'unnamed.pdf',\n            size: pdf.binary.fileSize || 0,\n            mimeType: pdf.binary.mimeType || 'application/pdf',\n            relevanceScore: pdf.relevanceScore\n          }))\n        },\n        binary: {\n          data: primaryPdf.binary  // Pass the entire binary object directly\n        }\n      });\n    } else {\n      // No PDF attachments found\n      outputItems.push({\n        json: {\n          ...emailContent,\n          attachmentName: null,\n          attachmentSize: 0,\n          noPdfFound: true,\n          pdfCount: 0\n        }\n        // No binary property when no PDF\n      });\n    }\n  } else {\n    // No binary data at all\n    outputItems.push({\n      json: {\n        ...emailContent,\n        attachmentName: null,\n        attachmentSize: 0,\n        noPdfFound: true,\n        pdfCount: 0\n      }\n      // No binary property when no attachments\n    });\n  }\n}\n\nreturn outputItems;"
+      },
+      "id": "e3718ea0-b075-42a6-9acd-61dff0050c26",
+      "name": "Extract Email Content and Attachments",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -17712,
+        4048
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "pdf",
+        "options": {}
+      },
+      "id": "92c3943a-035b-4cbc-87e6-f4e3cbedb3be",
+      "name": "Extract Text from PDF",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [
+        -17488,
+        4048
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Email Subject: {{ $json.emailSubject }}\n\nEmail Body:\n{{ $json.emailBody }}\n\nPDF Content:\n{{ $json.text }}",
+        "hasOutputParser": true,
+        "messages": {
+          "messageValues": [
+            {
+              "message": "You are a procurement data extraction specialist. Your task is to extract structured procurement information from emails and attached documents.\n\nIMPORTANT: If multiple project memos or documents are provided in the content, you MUST:\n1. Parse and analyze ALL memos/documents thoroughly\n2. Compare the completeness and accuracy of information across all documents\n3. Identify which memo contains the most complete and accurate procurement details\n4. Extract data from the MOST COMPLETE memo that has all required fields\n5. Prioritize memos with complete 9COM numbers, project details, specifications, and delivery information\n\nExtract the following fields from the most complete document:\n- 9COM Number\n- Project Name and ID\n- Material Description and Specifications\n- Quantity and Unit\n- Critical Requirements\n- WBS Code\n- Budget Information\n- Delivery Location and Timeline\n\nReturn the data in the structured format specified by the output parser."
+            }
+          ]
+        },
+        "batching": {}
+      },
+      "id": "b72720ab-e9e1-4db6-bb82-bec08e8acecd",
+      "name": "Extract Procurement Details with AI",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.7,
+      "position": [
+        -16816,
+        3744
+      ]
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gpt-4o-mini",
+          "mode": "list",
+          "cachedResultName": "gpt-4o-mini"
+        },
+        "options": {}
+      },
+      "id": "75cb717c-af44-4391-8a03-a4f46f42c79e",
+      "name": "OpenAI GPT-4",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        -16800,
+        3968
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "8F8Tsz9r39VE7ZAO",
+          "name": "n8n free OpenAI API credits"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsonSchemaExample": "{\n  \"nineComNumber\": \"123-456789\",\n  \"projectName\": \"Pipeline Expansion Project\",\n  \"projectId\": \"PRJ-2024-001\",\n  \"materialDescription\": \"Stainless Steel Pipes\",\n  \"specifications\": \"SS 316L, 6 inch diameter, Schedule 40\",\n  \"quantity\": \"500 meters\",\n  \"criticalRequirements\": \"Material grade must be SS 316L certified\",\n  \"wbsCode\": \"WBS-1.2.3.4\",\n  \"budgetInfo\": 0,\n  \"deliveryLocation\": \"Site A, Building 3\",\n  \"deliveryTimeline\": \"Within 30 days\"\n}"
+      },
+      "id": "dffebf12-da7d-4a68-924e-95f7b6508223",
+      "name": "Structured Procurement Data Parser",
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        -16672,
+        3968
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Generate RFQ ID in format BQ-YYYYMMDDHHMMSS\nconst now = new Date();\nconst year = now.getFullYear();\nconst month = String(now.getMonth() + 1).padStart(2, '0');\nconst day = String(now.getDate()).padStart(2, '0');\nconst hours = String(now.getHours()).padStart(2, '0');\nconst minutes = String(now.getMinutes()).padStart(2, '0');\nconst seconds = String(now.getSeconds()).padStart(2, '0');\n\nconst rfqId = `BQ-${year}${month}${day}${hours}${minutes}${seconds}`;\n\n// Calculate submission deadline as 7 days from now\nconst submissionDeadline = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);\n\n// Return all input data plus rfqId and submissionDeadline fields\nconst outputItems = $input.all().map(item => ({\n  json: {\n    ...item.json,\n    rfqId: rfqId,\n    submissionDeadline: submissionDeadline.toISOString()\n  }\n}));\n\nreturn outputItems;"
+      },
+      "id": "99f91fd1-279b-4b96-a629-beb6a302e895",
+      "name": "Generate RFQ ID",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -15792,
+        3376
+      ]
+    },
+    {
+      "parameters": {
+        "tableId": "rfq_requests",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "rfq_id",
+              "fieldValue": "={{ $json.rfqId }}"
+            },
+            {
+              "fieldId": "nine_com_number",
+              "fieldValue": "={{ $json.output.nineComNumber }}"
+            },
+            {
+              "fieldId": "project_name",
+              "fieldValue": "={{ $json.output.projectName }}"
+            },
+            {
+              "fieldId": "project_id",
+              "fieldValue": "={{ $json.output.projectId }}"
+            },
+            {
+              "fieldId": "material_description",
+              "fieldValue": "={{ $json.output.materialDescription }}"
+            },
+            {
+              "fieldId": "specifications",
+              "fieldValue": "={{ $json.output.specifications }}"
+            },
+            {
+              "fieldId": "quantity",
+              "fieldValue": "={{ $json.output.quantity }}"
+            },
+            {
+              "fieldId": "critical_requirements",
+              "fieldValue": "={{ $json.output.criticalRequirements }}"
+            },
+            {
+              "fieldId": "wbs_code",
+              "fieldValue": "={{ $json.output.wbsCode }}"
+            },
+            {
+              "fieldId": "estimated_value",
+              "fieldValue": "={{ $json.output.budgetInfo && $json.output.budgetInfo !== 'Not specified' ? $json.output.budgetInfo : null }}"
+            },
+            {
+              "fieldId": "delivery_location",
+              "fieldValue": "={{ $json.output.deliveryLocation }}"
+            },
+            {
+              "fieldId": "delivery_timeline",
+              "fieldValue": "={{ $json.output.deliveryTimeline }}"
+            },
+            {
+              "fieldId": "status",
+              "fieldValue": "initiated"
+            },
+            {
+              "fieldId": "response_deadline",
+              "fieldValue": "={{ $json.submissionDeadline }}"
+            }
+          ]
+        }
+      },
+      "id": "7f35c196-0ff8-4147-8d5b-57180dde95a9",
+      "name": "Insert RFQ Request",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        -15568,
+        3376
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "H9IyYYTAfbfWzJPz",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "13jJcP0qdfFs7iSj2CC7xggCU24nQSb7LPVCQcKlX26k",
+          "mode": "list",
+          "cachedResultName": "9COM_to_AVL_Master_List",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/13jJcP0qdfFs7iSj2CC7xggCU24nQSb7LPVCQcKlX26k/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Sheet 1",
+          "mode": "name"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "9COM_Number",
+              "lookupValue": "={{ $json.nineComNumber }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "0ef63cc0-e3c9-4582-9520-449fd7b58e41",
+      "name": "Lookup AVL in Google Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -15344,
+        3376
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "8MZEqF1zfVQWFN69",
+          "name": "Google Sheets account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "id-1",
+              "leftValue": "={{ $('Lookup AVL in Google Sheets').itemMatching(0).json }}",
+              "operator": {
+                "type": "object",
+                "operation": "exists"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "6d2a3d12-d29f-435a-8996-b01e9d0b73b3",
+      "name": "AVL Found?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -15120,
+        3168
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "download",
+        "fileId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $json.avlDocumentId }}"
+        },
+        "options": {
+          "binaryPropertyName": "data"
+        }
+      },
+      "id": "eb6f0117-06fa-44d5-a3d1-b10999514eb4",
+      "name": "Download AVL Document",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        -14896,
+        3376
+      ],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "SKAmFJhxw3lMu9yM",
+          "name": "Google Drive account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "pdf",
+        "options": {}
+      },
+      "id": "40246db9-bc28-4887-84d0-c2de0d82db12",
+      "name": "Extract Vendor List from AVL",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [
+        -14672,
+        3376
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=AVL Document Content:\n{{ $json.text }}",
+        "hasOutputParser": true,
+        "batching": {}
+      },
+      "id": "0ba3412f-db7c-48d4-9081-45048d532bad",
+      "name": "Extract Vendor Details with AI",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.7,
+      "position": [
+        -14448,
+        3376
+      ]
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "id",
+          "value": "gpt-4o"
+        },
+        "options": {}
+      },
+      "id": "91768503-dee5-417b-a433-2ce68f067f10",
+      "name": "OpenAI GPT-4 for Vendors",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        -14432,
+        3600
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "8F8Tsz9r39VE7ZAO",
+          "name": "n8n free OpenAI API credits"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsonSchemaExample": "{\n  \"vendors\": [\n    {\n      \"vendorName\": \"ABC Supplies Ltd\",\n      \"contactPerson\": \"John Smith\",\n      \"email\": \"john@abcsupplies.com\",\n      \"phone\": \"+1-555-0123\",\n      \"address\": \"123 Industrial Ave, City, State 12345\",\n      \"specialization\": \"Stainless steel materials\",\n      \"certifications\": \"ISO 9001, ASME certified\"\n    }\n  ]\n}"
+      },
+      "id": "f2779d2a-72f7-4836-88f9-0a9b2dd6a77f",
+      "name": "Structured Vendor Data Parser",
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        -14304,
+        3600
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract vendors array from AI output and create one item per vendor\n// Include all RFQ details from previous nodes for use in email generation\n\nconst items = $input.all();\nconst outputItems = [];\n\n// Get the vendors data (from Extract Vendor Details with AI or Use Default Vendor List)\nconst vendorsData = items[0].json.vendors || items[0].json || [];\n\n// Get RFQ details from previous nodes\nconst rfqData = $('Generate RFQ ID').first().json;\nconst procurementDetails = $('Extract Procurement Details with AI').first().json;\nconst emailData = $('Extract Email Content and Attachments').first().json;\n\n// Create one item per vendor with all necessary data\nif (Array.isArray(vendorsData)) {\n  for (const vendor of vendorsData) {\n    outputItems.push({\n      json: {\n        // Vendor information\n        vendor_name: vendor.vendor_name || vendor.name,\n        vendor_email: vendor.vendor_email || vendor.email,\n        vendor_contact: vendor.vendor_contact || vendor.contact,\n        vendor_phone: vendor.vendor_phone || vendor.phone,\n        \n        // RFQ information\n        rfq_id: rfqData.rfq_id,\n        rfq_number: rfqData.rfq_number,\n        \n        // Procurement details\n        item_description: procurementDetails.item_description,\n        quantity: procurementDetails.quantity,\n        unit: procurementDetails.unit,\n        delivery_date: procurementDetails.delivery_date,\n        delivery_location: procurementDetails.delivery_location,\n        specifications: procurementDetails.specifications,\n        additional_requirements: procurementDetails.additional_requirements,\n        \n        // Email metadata\n        original_email_id: emailData.email_id,\n        original_subject: emailData.subject,\n        requester_email: emailData.from,\n        \n        // Timestamp\n        processed_at: new Date().toISOString()\n      }\n    });\n  }\n} else {\n  // If vendorsData is a single vendor object\n  outputItems.push({\n    json: {\n      // Vendor information\n      vendor_name: vendorsData.vendor_name || vendorsData.name,\n      vendor_email: vendorsData.vendor_email || vendorsData.email,\n      vendor_contact: vendorsData.vendor_contact || vendorsData.contact,\n      vendor_phone: vendorsData.vendor_phone || vendorsData.phone,\n      \n      // RFQ information\n      rfq_id: rfqData.rfq_id,\n      rfq_number: rfqData.rfq_number,\n      \n      // Procurement details\n      item_description: procurementDetails.item_description,\n      quantity: procurementDetails.quantity,\n      unit: procurementDetails.unit,\n      delivery_date: procurementDetails.delivery_date,\n      delivery_location: procurementDetails.delivery_location,\n      specifications: procurementDetails.specifications,\n      additional_requirements: procurementDetails.additional_requirements,\n      \n      // Email metadata\n      original_email_id: emailData.email_id,\n      original_subject: emailData.subject,\n      requester_email: emailData.from,\n      \n      // Timestamp\n      processed_at: new Date().toISOString()\n    }\n  });\n}\n\nreturn outputItems;"
+      },
+      "id": "0a4792d7-54eb-4852-920c-06b337435628",
+      "name": "Prepare Vendor Loop Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -14096,
+        3536
+      ]
+    },
+    {
+      "parameters": {
+        "tableId": "vendors",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "vendor_name",
+              "fieldValue": "={{ $json.vendor_name }}"
+            },
+            {
+              "fieldId": "vendor_email",
+              "fieldValue": "={{ $json.vendor_email }}"
+            },
+            {
+              "fieldId": "contact_person",
+              "fieldValue": "={{ $json.vendor_contact }}"
+            },
+            {
+              "fieldId": "phone_number",
+              "fieldValue": "={{ $json.vendor_phone }}"
+            },
+            {
+              "fieldId": "last_contacted",
+              "fieldValue": "={{ $now }}"
+            }
+          ]
+        }
+      },
+      "id": "8ce1560c-7dc6-43b9-a275-b5d03cbfec42",
+      "name": "Upsert Vendor Record",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        -13872,
+        3536
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "H9IyYYTAfbfWzJPz",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.email }}",
+        "subject": "=RFQ {{ $json.rfqId }}: {{ $json.projectName }}",
+        "message": "=<html>\n<head>\n  <style>\n    body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }\n    .header { background-color: #0066cc; color: white; padding: 20px; text-align: center; }\n    .content { padding: 20px; }\n    .section { margin-bottom: 20px; }\n    .section-title { font-weight: bold; color: #0066cc; margin-bottom: 10px; font-size: 16px; }\n    .detail-row { margin: 5px 0; }\n    .label { font-weight: bold; display: inline-block; width: 200px; }\n    .footer { background-color: #f5f5f5; padding: 15px; margin-top: 30px; text-align: center; font-size: 12px; }\n  </style>\n</head>\n<body>\n  <div class=\"header\">\n    <h1>Request for Quotation (RFQ)</h1>\n  </div>\n  \n  <div class=\"content\">\n    <div class=\"section\">\n      <div class=\"section-title\">RFQ Information</div>\n      <div class=\"detail-row\"><span class=\"label\">RFQ ID:</span> {{ $json.rfqId }}</div>\n      <div class=\"detail-row\"><span class=\"label\">9COM Number:</span> {{ $json.nineComNumber }}</div>\n      <div class=\"detail-row\"><span class=\"label\">Project Name:</span> {{ $json.projectName }}</div>\n    </div>\n    \n    <div class=\"section\">\n      <div class=\"section-title\">Project Details</div>\n      <div class=\"detail-row\"><span class=\"label\">Description:</span> {{ $json.projectDescription }}</div>\n      <div class=\"detail-row\"><span class=\"label\">Location:</span> {{ $json.projectLocation }}</div>\n    </div>\n    \n    <div class=\"section\">\n      <div class=\"section-title\">Material Specifications</div>\n      <div class=\"detail-row\"><span class=\"label\">Material Type:</span> {{ $json.materialType }}</div>\n      <div class=\"detail-row\"><span class=\"label\">Specifications:</span> {{ $json.materialSpecifications }}</div>\n      <div class=\"detail-row\"><span class=\"label\">Quantity Required:</span> {{ $json.quantity }} {{ $json.unit }}</div>\n    </div>\n    \n    <div class=\"section\">\n      <div class=\"section-title\">Critical Requirements</div>\n      <div class=\"detail-row\">{{ $json.criticalRequirements }}</div>\n    </div>\n    \n    <div class=\"section\">\n      <div class=\"section-title\">Delivery Information</div>\n      <div class=\"detail-row\"><span class=\"label\">Delivery Location:</span> {{ $json.deliveryLocation }}</div>\n      <div class=\"detail-row\"><span class=\"label\">Required Delivery Date:</span> {{ $json.requiredDeliveryDate }}</div>\n    </div>\n    \n    <div class=\"section\">\n      <div class=\"section-title\">Submission Details</div>\n      <div class=\"detail-row\"><span class=\"label\">Submission Deadline:</span> <strong>{{ $json.submissionDeadline }}</strong></div>\n      <div class=\"detail-row\"><span class=\"label\">Contact Person:</span> {{ $json.contactPerson }}</div>\n      <div class=\"detail-row\"><span class=\"label\">Contact Email:</span> {{ $json.contactEmail }}</div>\n    </div>\n    \n    <p style=\"margin-top: 30px;\">\n      Please submit your quotation including unit price, total cost, delivery timeline, and any relevant certifications or compliance documents.\n    </p>\n  </div>\n  \n  <div class=\"footer\">\n    <p>This is an automated message from the Procurement Department.</p>\n    <p>Please do not reply directly to this email. For inquiries, contact {{ $json.contactEmail }}</p>\n  </div>\n</body>\n</html>",
+        "options": {
+          "appendAttribution": false,
+          "senderName": "Procurement Department"
+        }
+      },
+      "id": "2be330d7-6ec0-4fe4-9510-b5388d0b795d",
+      "name": "Send RFQ Email to Vendor",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        -13648,
+        3536
+      ],
+      "webhookId": "0a181861-3865-4b99-b689-fdd22e2a7142",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "iT30tmeGyQmVG6Bt",
+          "name": "Gmail account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "tableId": "rfq_events",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "rfq_id",
+              "fieldValue": "={{ $json.rfqId }}"
+            },
+            {
+              "fieldId": "event_type",
+              "fieldValue": "email_sent"
+            },
+            {
+              "fieldId": "vendor_email",
+              "fieldValue": "={{ $json.email }}"
+            },
+            {
+              "fieldId": "vendor_name",
+              "fieldValue": "={{ $json.vendorName }}"
+            },
+            {
+              "fieldId": "event_timestamp",
+              "fieldValue": "={{ $now }}"
+            }
+          ]
+        }
+      },
+      "id": "653578a6-cb1b-41aa-b174-193c70f7b4c0",
+      "name": "Log Email Sent Event",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        -13424,
+        3536
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "H9IyYYTAfbfWzJPz",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Aggregate all vendor emails sent and return a single item with rfqId and vendorCount\nconst items = $input.all();\n\n// Get the RFQ ID from the first item (should be the same for all)\nconst rfqId = items[0].json.rfqId;\n\n// Count the number of vendors\nconst vendorCount = items.length;\n\n// Return a single item with the aggregated data\nreturn [\n  {\n    json: {\n      rfqId: rfqId,\n      vendorCount: vendorCount\n    }\n  }\n];"
+      },
+      "id": "4ab2d54c-915e-44a7-8430-7204c1d99b88",
+      "name": "Aggregate Vendor Count",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -13200,
+        3536
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "rfq_requests",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "rfq_id",
+              "condition": "eq",
+              "keyValue": "={{ $json.rfqId }}"
+            }
+          ]
+        },
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "status",
+              "fieldValue": "awaiting_responses"
+            },
+            {
+              "fieldId": "vendor_count",
+              "fieldValue": "={{ $json.vendorCount }}"
+            }
+          ]
+        }
+      },
+      "id": "b6ec188f-9582-4ab9-92d2-65ff660a216c",
+      "name": "Update RFQ Status to Awaiting Responses",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        -12976,
+        3536
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "H9IyYYTAfbfWzJPz",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "addLabels",
+        "messageId": "={{ $('Monitor Procurement Emails').first().json.id }}",
+        "labelIds": [
+          "RFQ_PROCESSED"
+        ]
+      },
+      "id": "68582dce-804d-4ebb-a5bf-fd8a11628b3b",
+      "name": "Mark Email as Processed",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        -12752,
+        3536
+      ],
+      "webhookId": "1d6f5696-6373-4837-b568-7a34d1f182e0",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "iT30tmeGyQmVG6Bt",
+          "name": "Gmail account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "tableId": "workflow_executions",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "workflow_name",
+              "fieldValue": "RFQ Generation"
+            },
+            {
+              "fieldId": "status",
+              "fieldValue": "success"
+            },
+            {
+              "fieldId": "rfq_id",
+              "fieldValue": "={{ $json.rfqId }}"
+            },
+            {
+              "fieldId": "vendor_count",
+              "fieldValue": "={{ $json.vendorCount }}"
+            },
+            {
+              "fieldId": "completed_at",
+              "fieldValue": "={{ $now }}"
+            }
+          ]
+        }
+      },
+      "id": "1132b60b-3515-461f-adde-622bbab650fa",
+      "name": "Log Workflow Execution",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        -12528,
+        3536
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "H9IyYYTAfbfWzJPz",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "id-1",
+                    "leftValue": "={{ $json.noPdfFound }}",
+                    "rightValue": true,
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "or"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "id-2",
+                    "leftValue": "={{ $json.text }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "string",
+                      "operation": "exists"
+                    }
+                  },
+                  {
+                    "id": "id-3",
+                    "leftValue": "={{ $json.text }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "string",
+                      "operation": "notEmpty"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "id": "f4ef99aa-b988-4bb3-b384-fc4ae1f979d2",
+      "name": "Check PDF Extraction Status",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.3,
+      "position": [
+        -17264,
+        4176
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Prepare email body text for AI extraction (fallback method)\n// This runs when PDF extraction fails or no PDF is found\n\nconst items = $input.all();\nconst outputItems = [];\n\nfor (const item of items) {\n  // Get email data from Extract Email Content and Attachments node\n  const emailData = $('Extract Email Content and Attachments').item.json;\n  \n  // Format the email content for AI processing\n  const formattedText = `\nEMAIL SUBJECT:\n${emailData.subject || 'No subject'}\n\nEMAIL BODY:\n${emailData.bodyText || emailData.bodyHtml || 'No body content'}\n\nEXTRACTION METHOD: Fallback - Email Body Only (No PDF or PDF extraction failed)\n`;\n  \n  outputItems.push({\n    json: {\n      ...item.json,\n      emailSubject: emailData.subject || '',\n      emailBody: emailData.bodyText || emailData.bodyHtml || '',\n      formattedTextForAI: formattedText,\n      extractionMethod: 'email_body_fallback',\n      originalMessageId: emailData.messageId || ''\n    }\n  });\n}\n\nreturn outputItems;"
+      },
+      "id": "612714c1-bb64-43a2-bad9-b0522082fc2a",
+      "name": "Prepare Email Body Text for Extraction",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -17040,
+        4256
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.emailSubject }}\n\n{{ $json.bodyText }}",
+        "hasOutputParser": true,
+        "messages": {
+          "messageValues": [
+            {
+              "message": "You are a procurement data extraction specialist. Your task is to extract structured procurement information from emails and attached documents.\n\nIMPORTANT: If multiple project memos or documents are provided in the email content, you MUST:\n1. Parse and analyze ALL memos/documents thoroughly\n2. Compare the completeness and accuracy of information across all documents\n3. Identify which memo contains the most complete and accurate procurement details\n4. Extract data from the MOST COMPLETE memo that has all required fields\n5. Prioritize memos with complete 9COM numbers, project details, specifications, and delivery information\n\nExtract the following fields from the most complete document:\n- 9COM Number\n- Project Name and ID\n- Material Description and Specifications\n- Quantity and Unit\n- Critical Requirements\n- WBS Code\n- Budget Information\n- Delivery Location and Timeline\n\nReturn the data in the structured format specified by the output parser."
+            }
+          ]
+        },
+        "batching": {}
+      },
+      "id": "05fc5228-047c-4b46-907f-a62da3fca174",
+      "name": "Extract from Email Body (Fallback)",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.7,
+      "position": [
+        -16816,
+        4256
+      ]
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "id",
+          "value": "gpt-4o"
+        },
+        "options": {}
+      },
+      "id": "85006f04-f43b-414f-b9d1-86c2db8c3d80",
+      "name": "OpenAI GPT-4 for Email Body",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        -16800,
+        4480
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "8F8Tsz9r39VE7ZAO",
+          "name": "n8n free OpenAI API credits"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsonSchemaExample": "{\n  \"nineComNumber\": \"123-456789\",\n  \"projectName\": \"Pipeline Expansion Project\",\n  \"projectId\": \"PRJ-2024-001\",\n  \"materialDescription\": \"Stainless Steel Pipes\",\n  \"specifications\": \"SS 316L, 6 inch diameter, Schedule 40\",\n  \"quantity\": \"500 meters\",\n  \"criticalRequirements\": \"Material grade must be SS 316L certified\",\n  \"wbsCode\": \"WBS-1.2.3.4\",\n  \"budgetInfo\": 0,\n  \"deliveryLocation\": \"Site A, Building 3\",\n  \"deliveryTimeline\": \"Within 30 days\"\n}"
+      },
+      "id": "68bdf75b-73b9-4c08-935c-574a248558e7",
+      "name": "Structured Parser for Email Body",
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        -16672,
+        4480
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "chooseBranch"
+      },
+      "id": "8f253747-bb04-41ed-9deb-77155445816c",
+      "name": "Merge Extraction Results",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        -16464,
+        3824
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Assess extraction quality by checking for missing critical fields\nconst items = $input.all();\nconst outputItems = [];\n\nfor (const item of items) {\n  const data = item.json;\n  \n  // Define critical fields that must be present\n  const criticalFields = [\n    'nineComNumber',\n    'projectName',\n    'materialDescription',\n    'quantity'\n  ];\n  \n  // Check which critical fields are missing or empty\n  const missingCriticalFields = criticalFields.filter(field => {\n    const value = data[field];\n    return !value || value === '' || value === 'N/A' || value === null || value === undefined;\n  });\n  \n  // Define all expected fields for completeness calculation\n  const allExpectedFields = [\n    'nineComNumber',\n    'projectName',\n    'projectId',\n    'materialDescription',\n    'specifications',\n    'quantity',\n    'criticalRequirements',\n    'wbsCode',\n    'budgetInfo',\n    'deliveryLocation',\n    'deliveryTimeline'\n  ];\n  \n  // Count how many fields have valid values\n  const filledFields = allExpectedFields.filter(field => {\n    const value = data[field];\n    return value && value !== '' && value !== 'N/A' && value !== null && value !== undefined;\n  }).length;\n  \n  // Calculate completeness score as percentage\n  const completenessScore = Math.round((filledFields / allExpectedFields.length) * 100);\n  \n  // Determine extraction method (PDF or email body)\n  const extractionMethod = data.text ? 'pdf' : 'email_body';\n  \n  // Flag as low quality if score below 70% or critical fields are missing\n  const isLowQuality = completenessScore < 70 || missingCriticalFields.length > 0;\n  \n  outputItems.push({\n    json: {\n      ...data,\n      qualityAssessment: {\n        completenessScore: completenessScore,\n        missingCriticalFields: missingCriticalFields,\n        isLowQuality: isLowQuality,\n        extractionMethod: extractionMethod,\n        filledFieldsCount: filledFields,\n        totalFieldsCount: allExpectedFields.length\n      }\n    }\n  });\n}\n\nreturn outputItems;"
+      },
+      "id": "460ce978-c58a-4ef2-a11e-a055e8208e56",
+      "name": "Assess Extraction Quality",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -16240,
+        3824
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "id-1",
+              "leftValue": "={{ $json.qualityScore }}",
+              "rightValue": "70",
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              }
+            },
+            {
+              "id": "id-2",
+              "leftValue": "={{ $json.hasAllCriticalFields }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "b82e97e6-98b6-434f-968d-025aac2dd3bf",
+      "name": "Is Quality Acceptable?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -16016,
+        3824
+      ]
+    },
+    {
+      "parameters": {
+        "tableId": "extraction_quality_issues",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "email_id",
+              "fieldValue": "={{ $('Extract Email Content and Attachments').first().json.messageId }}"
+            },
+            {
+              "fieldId": "extraction_method",
+              "fieldValue": "={{ $json.extractionMethod }}"
+            },
+            {
+              "fieldId": "quality_score",
+              "fieldValue": "={{ $json.qualityScore }}"
+            },
+            {
+              "fieldId": "missing_fields",
+              "fieldValue": "={{ $json.missingFields }}"
+            },
+            {
+              "fieldId": "status",
+              "fieldValue": "pending_manual_review"
+            },
+            {
+              "fieldId": "created_at",
+              "fieldValue": "={{ $now }}"
+            }
+          ]
+        }
+      },
+      "id": "c34d4eb0-180a-48ac-885b-bf60fbc8e39f",
+      "name": "Log Extraction Quality Issue",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        -15792,
+        3888
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "H9IyYYTAfbfWzJPz",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Workflow Configuration').first().json.devTeamEmail }}",
+        "subject": "ACTION REQUIRED: Manual Document Upload Needed for RFQ Processing",
+        "message": "=<html>\n<head>\n  <style>\n    body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }\n    .header { background-color: #dc3545; color: white; padding: 20px; text-align: center; }\n    .content { padding: 20px; }\n    .section { margin-bottom: 20px; background-color: #f8f9fa; padding: 15px; border-left: 4px solid #dc3545; }\n    .section-title { font-weight: bold; color: #dc3545; margin-bottom: 10px; font-size: 16px; }\n    .detail-row { margin: 5px 0; }\n    .label { font-weight: bold; display: inline-block; width: 200px; }\n    .warning { background-color: #fff3cd; border: 1px solid #ffc107; padding: 15px; margin: 20px 0; border-radius: 4px; }\n    .instructions { background-color: #d1ecf1; border: 1px solid #0dcaf0; padding: 15px; margin: 20px 0; border-radius: 4px; }\n    .missing-fields { color: #dc3545; font-weight: bold; }\n    .footer { background-color: #f5f5f5; padding: 15px; margin-top: 30px; text-align: center; font-size: 12px; }\n  </style>\n</head>\n<body>\n  <div class=\"header\">\n    <h1>⚠️ ACTION REQUIRED: Manual Document Upload Needed</h1>\n  </div>\n  \n  <div class=\"content\">\n    <div class=\"warning\">\n      <strong>⚠️ Extraction Quality Issue Detected</strong><br>\n      The automated extraction process was unable to extract sufficient information from the procurement request. Manual intervention is required to proceed with RFQ generation.\n    </div>\n    \n    <div class=\"section\">\n      <div class=\"section-title\">Original Email Details</div>\n      <div class=\"detail-row\"><span class=\"label\">Email ID:</span> {{ $('Extract Email Content and Attachments').first().json.messageId }}</div>\n      <div class=\"detail-row\"><span class=\"label\">Subject:</span> {{ $('Extract Email Content and Attachments').first().json.subject }}</div>\n      <div class=\"detail-row\"><span class=\"label\">From:</span> {{ $('Extract Email Content and Attachments').first().json.sender }}</div>\n      <div class=\"detail-row\"><span class=\"label\">Received Date:</span> {{ $('Extract Email Content and Attachments').first().json.receivedDate }}</div>\n    </div>\n    \n    <div class=\"section\">\n      <div class=\"section-title\">Extraction Quality Assessment</div>\n      <div class=\"detail-row\"><span class=\"label\">Quality Score:</span> {{ $json.qualityScore }}%</div>\n      <div class=\"detail-row\"><span class=\"label\">Extraction Method:</span> {{ $json.extractionMethod }}</div>\n      <div class=\"detail-row\"><span class=\"label\">Missing Fields:</span> <span class=\"missing-fields\">{{ $json.missingFields }}</span></div>\n    </div>\n    \n    <div class=\"instructions\">\n      <div class=\"section-title\">📋 Required Actions</div>\n      <ol>\n        <li><strong>Download the original email attachment</strong> (if available) or obtain the procurement memo/document from the requester</li>\n        <li><strong>Upload the initial RFQ request document to Google Drive folder:</strong> <code>1_project_initiation_docs</code></li>\n        <li><strong>Ensure the procurement memo/document contains:</strong>\n          <ul>\n            <li>9COM Number</li>\n            <li>Project Name and ID</li>\n            <li>Material Description and Specifications</li>\n            <li>Quantity and Unit</li>\n            <li>Delivery Location and Timeline</li>\n            <li>WBS Code and Budget Information</li>\n          </ul>\n        </li>\n        <li><strong>Re-trigger the workflow</strong> or manually create the RFQ in the system</li>\n      </ol>\n      <p><strong>Note:</strong> This is for the initial procurement request document, not vendor responses. Vendor responses should be uploaded to the appropriate vendor response folder.</p>\n    </div>\n    \n    <div class=\"section\">\n      <div class=\"section-title\">Extracted Data (Partial)</div>\n      <div class=\"detail-row\"><span class=\"label\">9COM Number:</span> {{ $('Merge Extraction Results').first().json.nineComNumber || 'MISSING' }}</div>\n      <div class=\"detail-row\"><span class=\"label\">Project Name:</span> {{ $('Merge Extraction Results').first().json.projectName || 'MISSING' }}</div>\n      <div class=\"detail-row\"><span class=\"label\">Material Description:</span> {{ $('Merge Extraction Results').first().json.materialDescription || 'MISSING' }}</div>\n      <div class=\"detail-row\"><span class=\"label\">Quantity:</span> {{ $('Merge Extraction Results').first().json.quantity || 'MISSING' }}</div>\n      <div class=\"detail-row\"><span class=\"label\">Delivery Location:</span> {{ $('Merge Extraction Results').first().json.deliveryLocation || 'MISSING' }}</div>\n    </div>\n    \n    <p style=\"margin-top: 30px; font-weight: bold;\">\n      Please address this issue as soon as possible to avoid delays in the procurement process.\n    </p>\n  </div>\n  \n  <div class=\"footer\">\n    <p>This is an automated alert from the RFQ Workflow Automation System.</p>\n    <p>Workflow Execution ID: {{ $execution.id }}</p>\n    <p>Timestamp: {{ $now }}</p>\n  </div>\n</body>\n</html>",
+        "options": {
+          "appendAttribution": false,
+          "senderName": "RFQ Workflow Automation"
+        }
+      },
+      "id": "c001127c-6a90-4ebb-8841-e57ae5b45abb",
+      "name": "Notify Dev Team - Manual Upload Needed",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        -15568,
+        3888
+      ],
+      "webhookId": "58263ac9-e524-46a9-aa5c-9eaaa997f918",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "iT30tmeGyQmVG6Bt",
+          "name": "Gmail account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "tableId": "rfq_events",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "rfq_id",
+              "fieldValue": "={{ $json.rfqId }}"
+            },
+            {
+              "fieldId": "event_type",
+              "fieldValue": "avl_not_found"
+            },
+            {
+              "fieldId": "nine_com_number",
+              "fieldValue": "={{ $json.nineComNumber }}"
+            },
+            {
+              "fieldId": "project_name",
+              "fieldValue": "={{ $json.projectName }}"
+            },
+            {
+              "fieldId": "event_timestamp",
+              "fieldValue": "={{ $now }}"
+            }
+          ]
+        }
+      },
+      "id": "15dd6a87-0ab6-4995-b4a3-7dc452f84f4b",
+      "name": "Log AVL Not Found Event",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        -14896,
+        2992
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "H9IyYYTAfbfWzJPz",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Workflow Configuration').first().json.devTeamEmail }}",
+        "subject": "=SYSTEM ALERT: AVL Lookup Failed for RFQ {{ $json.rfqId }}",
+        "message": "=<html>\n<head>\n  <style>\n    body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }\n    .header { background-color: #dc3545; color: white; padding: 20px; text-align: center; }\n    .content { padding: 20px; }\n    .section { margin-bottom: 20px; background-color: #f8f9fa; padding: 15px; border-left: 4px solid #dc3545; }\n    .section-title { font-weight: bold; color: #dc3545; margin-bottom: 10px; font-size: 16px; }\n    .detail-row { margin: 5px 0; }\n    .label { font-weight: bold; display: inline-block; width: 200px; }\n    .warning { background-color: #fff3cd; border: 1px solid #ffc107; padding: 15px; margin: 20px 0; border-radius: 4px; }\n    .footer { background-color: #f5f5f5; padding: 15px; margin-top: 30px; text-align: center; font-size: 12px; }\n  </style>\n</head>\n<body>\n  <div class=\"header\">\n    <h1>🔧 SYSTEM ALERT: AVL Lookup Failed</h1>\n  </div>\n  \n  <div class=\"content\">\n    <div class=\"warning\">\n      <strong>⚠️ AVL Lookup Failure</strong><br>\n      The workflow attempted to find an Approved Vendor List (AVL) for 9COM number <strong>{{ $json.nineComNumber }}</strong> but no matching record was found in the AVL master list. This may indicate a missing AVL entry or an incorrect 9COM number in the procurement request.\n    </div>\n    \n    <div class=\"section\">\n      <div class=\"section-title\">RFQ Information</div>\n      <div class=\"detail-row\"><span class=\"label\">RFQ ID:</span> {{ $json.rfqId }}</div>\n      <div class=\"detail-row\"><span class=\"label\">9COM Number:</span> <strong>{{ $json.nineComNumber }}</strong></div>\n      <div class=\"detail-row\"><span class=\"label\">Project Name:</span> {{ $json.projectName }}</div>\n      <div class=\"detail-row\"><span class=\"label\">Project ID:</span> {{ $json.projectId }}</div>\n      <div class=\"detail-row\"><span class=\"label\">Material Description:</span> {{ $json.materialDescription }}</div>\n      <div class=\"detail-row\"><span class=\"label\">Retry Attempts:</span> {{ $json.retryCount || 0 }}</div>\n    </div>\n    \n    <div class=\"section\">\n      <div class=\"section-title\">Possible Causes</div>\n      <ul>\n        <li>The 9COM number <strong>{{ $json.nineComNumber }}</strong> does not exist in the AVL master list</li>\n        <li>The 9COM number was incorrectly extracted from the procurement memo</li>\n        <li>The AVL master list in Google Sheets is missing this commodity entry</li>\n        <li>There is a formatting mismatch between the extracted 9COM number and the master list</li>\n      </ul>\n    </div>\n    \n    <div class=\"section\">\n      <div class=\"section-title\">📋 Recommended Actions</div>\n      <ol>\n        <li><strong>Verify the 9COM number</strong> in the Google Sheets AVL master list</li>\n        <li><strong>Check the original procurement memo</strong> to confirm the 9COM number is correct</li>\n        <li><strong>Review the AI extraction quality</strong> to ensure accurate data capture</li>\n        <li><strong>Add missing AVL entries</strong> to the master list if this is a new commodity</li>\n        <li><strong>Improve the AVL matching logic</strong> if formatting issues are causing lookup failures</li>\n        <li><strong>Notify the procurement team</strong> that manual vendor selection is required for this RFQ</li>\n      </ol>\n    </div>\n    \n    <div class=\"section\">\n      <div class=\"section-title\">System Details</div>\n      <div class=\"detail-row\"><span class=\"label\">Workflow Execution ID:</span> {{ $execution.id }}</div>\n      <div class=\"detail-row\"><span class=\"label\">Timestamp:</span> {{ $now }}</div>\n      <div class=\"detail-row\"><span class=\"label\">RFQ Status:</span> Pending AVL Assignment</div>\n      <div class=\"detail-row\"><span class=\"label\">Procurement Team Notified:</span> Yes</div>\n    </div>\n  </div>\n  \n  <div class=\"footer\">\n    <p>This is an automated system alert from the RFQ Workflow Automation System.</p>\n    <p>Please investigate and resolve this issue to improve future AVL lookups.</p>\n  </div>\n</body>\n</html>",
+        "options": {
+          "appendAttribution": false,
+          "senderName": "RFQ Workflow Automation"
+        }
+      },
+      "id": "b527df56-1c15-42b4-8225-f04c11b5d6e4",
+      "name": "Notify Dev Team - AVL Lookup Failed",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        -14896,
+        3184
+      ],
+      "webhookId": "fb31c65d-a595-4921-816f-18846a835eb4",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "iT30tmeGyQmVG6Bt",
+          "name": "Gmail account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "rfq_requests",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "rfq_id",
+              "condition": "eq",
+              "keyValue": "={{ $json.rfqId }}"
+            }
+          ]
+        },
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "status",
+              "fieldValue": "pending_avl"
+            }
+          ]
+        }
+      },
+      "id": "1da5dd9c-b26a-4335-b725-7ffddb03aa59",
+      "name": "Update RFQ Status to Pending AVL",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        -14672,
+        2992
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "H9IyYYTAfbfWzJPz",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "amount": 1,
+        "unit": "hours"
+      },
+      "id": "d6e186e2-5028-4e95-b85f-1b93da65814c",
+      "name": "Wait 1 Hour for AVL",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        -14096,
+        3152
+      ],
+      "webhookId": "f3fbfbf5-fc19-4937-bd4d-05d2ed5e9897"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Track retry count for AVL lookup\n// Initialize retryCount to 0 if not present, otherwise increment it\n// Pass through all existing data with the updated retryCount field\n\nconst items = $input.all();\nconst outputItems = [];\n\nfor (const item of items) {\n  // Get current retry count, default to 0 if not present\n  const currentRetryCount = item.json.retryCount || 0;\n  \n  // Increment retry count\n  const newRetryCount = currentRetryCount + 1;\n  \n  // Pass through all existing data with updated retry count\n  outputItems.push({\n    json: {\n      ...item.json,\n      retryCount: newRetryCount\n    }\n  });\n}\n\nreturn outputItems;"
+      },
+      "id": "d73489fb-e96a-42e9-8e02-a5ffd76b020d",
+      "name": "Track Retry Count",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -14384,
+        2992
+      ]
+    },
+    {
+      "parameters": {
+        "amount": 1,
+        "unit": "hours"
+      },
+      "id": "41c37752-de6f-45cc-abab-7927a056b771",
+      "name": "Wait 1 Hour for Memo",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        -15120,
+        3888
+      ],
+      "webhookId": "4d1282df-0f35-4f25-b329-b18ed3e01e70"
+    },
+    {
+      "parameters": {
+        "resource": "fileFolder",
+        "searchMethod": "query",
+        "returnAll": true,
+        "filter": {
+          "folderId": {
+            "__rl": true,
+            "mode": "id",
+            "value": "={{ $('Workflow Configuration').first().json.projectInitiationFolderId }}"
+          }
+        },
+        "options": {}
+      },
+      "id": "bbc4fdf4-9a9d-4922-8bb6-1243930a1993",
+      "name": "List Files in Project Initiation Folder",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        -14896,
+        3776
+      ],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "SKAmFJhxw3lMu9yM",
+          "name": "Google Drive account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Intelligently match uploaded memo files based on email subject/body and procurement keywords\n// Compare filenames against original email subject and score based on relevance\n\nconst items = $input.all();\n\n// Get original email data from Extract Email Content and Attachments node\nconst emailData = $('Extract Email Content and Attachments').first().json;\nconst emailSubject = (emailData.subject || '').toLowerCase();\nconst emailBody = (emailData.bodyText || '').toLowerCase();\nconst messageId = emailData.messageId || '';\n\n// Get retry count from Track Memo Retry Count node\nconst retryData = $('Track Memo Retry Count').first().json;\nconst memoRetryCount = retryData.memoRetryCount || 0;\n\n// Get list of files from List Files in Project Initiation Folder node\nconst files = items.map(item => ({\n  id: item.json.id,\n  name: (item.json.name || '').toLowerCase(),\n  originalName: item.json.name || '',\n  mimeType: item.json.mimeType || '',\n  createdTime: item.json.createdTime || '',\n  modifiedTime: item.json.modifiedTime || ''\n}));\n\n// Function to score file relevance\nconst scoreFileRelevance = (filename) => {\n  let score = 0;\n  \n  // High priority keywords (procurement-related)\n  const highPriorityKeywords = ['rfq', 'procurement', 'memo', 'request', 'purchase', 'requisition', '9com'];\n  highPriorityKeywords.forEach(keyword => {\n    if (filename.includes(keyword)) score += 15;\n  });\n  \n  // Medium priority keywords\n  const mediumPriorityKeywords = ['material', 'specification', 'requirement', 'order', 'project', 'initiation'];\n  mediumPriorityKeywords.forEach(keyword => {\n    if (filename.includes(keyword)) score += 8;\n  });\n  \n  // Extract key terms from email subject (words longer than 3 characters)\n  const subjectWords = emailSubject.split(/\\s+/).filter(word => word.length > 3);\n  subjectWords.forEach(word => {\n    if (filename.includes(word)) score += 10;\n  });\n  \n  // Extract key terms from email body (top 10 most common words longer than 4 characters)\n  const bodyWords = emailBody.split(/\\s+/).filter(word => word.length > 4);\n  const wordFrequency = {};\n  bodyWords.forEach(word => {\n    wordFrequency[word] = (wordFrequency[word] || 0) + 1;\n  });\n  const topBodyWords = Object.keys(wordFrequency)\n    .sort((a, b) => wordFrequency[b] - wordFrequency[a])\n    .slice(0, 10);\n  topBodyWords.forEach(word => {\n    if (filename.includes(word)) score += 5;\n  });\n  \n  // Bonus for PDF files (most procurement memos are PDFs)\n  if (filename.endsWith('.pdf')) score += 5;\n  \n  return score;\n};\n\n// Score all files\nconst scoredFiles = files.map(file => ({\n  ...file,\n  relevanceScore: scoreFileRelevance(file.name)\n}));\n\n// Sort by relevance score (highest first)\nconst sortedFiles = scoredFiles.sort((a, b) => b.relevanceScore - a.relevanceScore);\n\n// Get the best matching file (must have score > 0)\nconst bestMatch = sortedFiles.length > 0 && sortedFiles[0].relevanceScore > 0 ? sortedFiles[0] : null;\n\nif (bestMatch) {\n  // Return the best matching file with metadata\n  return [{\n    json: {\n      fileId: bestMatch.id,\n      fileName: bestMatch.originalName,\n      mimeType: bestMatch.mimeType,\n      relevanceScore: bestMatch.relevanceScore,\n      memoRetryCount: memoRetryCount,\n      matchFound: true,\n      originalEmailSubject: emailData.subject || '',\n      originalMessageId: messageId,\n      totalFilesScanned: files.length,\n      topMatchDetails: {\n        fileName: bestMatch.originalName,\n        score: bestMatch.relevanceScore,\n        createdTime: bestMatch.createdTime,\n        modifiedTime: bestMatch.modifiedTime\n      }\n    }\n  }];\n} else {\n  // No suitable match found\n  return [{\n    json: {\n      fileId: null,\n      fileName: null,\n      mimeType: null,\n      relevanceScore: 0,\n      memoRetryCount: memoRetryCount,\n      matchFound: false,\n      originalEmailSubject: emailData.subject || '',\n      originalMessageId: messageId,\n      totalFilesScanned: files.length,\n      topMatchDetails: null\n    }\n  }];\n}"
+      },
+      "id": "922b0040-8ed3-4757-84f7-ea20992ab9d9",
+      "name": "Match Memo File",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -14672,
+        3776
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "id-1",
+              "leftValue": "={{ $json.matchFound }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "76ec8f44-f670-4cce-9f3c-887d6ae2cbc6",
+      "name": "Memo Found?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -14384,
+        3888
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "download",
+        "fileId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $json.fileId }}"
+        },
+        "options": {
+          "binaryPropertyName": "data"
+        }
+      },
+      "id": "4aeb6794-eda9-43c1-872d-57051c721491",
+      "name": "Download Matched Memo",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        -14096,
+        3888
+      ],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "SKAmFJhxw3lMu9yM",
+          "name": "Google Drive account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "pdf",
+        "options": {}
+      },
+      "id": "246651c4-9dcd-41a5-bc6c-e5c573f61110",
+      "name": "Extract Text from Uploaded Memo",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [
+        -13872,
+        3920
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Track retry count for memo upload\n// Initialize memoRetryCount to 0 if not present, otherwise increment it\n// Pass through all existing data with the updated memoRetryCount field\n\nconst items = $input.all();\nconst outputItems = [];\n\nfor (const item of items) {\n  // Get current memo retry count, default to 0 if not present\n  const currentMemoRetryCount = item.json.memoRetryCount || 0;\n  \n  // Increment memo retry count\n  const newMemoRetryCount = currentMemoRetryCount + 1;\n  \n  // Pass through all existing data with updated memo retry count\n  outputItems.push({\n    json: {\n      ...item.json,\n      memoRetryCount: newMemoRetryCount\n    }\n  });\n}\n\nreturn outputItems;"
+      },
+      "id": "b74b3762-f519-47ae-aae9-f12bd4467dfa",
+      "name": "Track Memo Retry Count",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -15344,
+        3888
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Monitor Procurement Emails": {
+      "main": [
+        [
+          {
+            "node": "Workflow Configuration",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Workflow Configuration": {
+      "main": [
+        [
+          {
+            "node": "Check If Already Processed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check If Already Processed": {
+      "main": [
+        [
+          {
+            "node": "Is Email Already Processed?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Email Already Processed?": {
+      "main": [
+        [
+          {
+            "node": "Extract Email Content and Attachments",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Email Content and Attachments": {
+      "main": [
+        [
+          {
+            "node": "Extract Text from PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Text from PDF": {
+      "main": [
+        [
+          {
+            "node": "Extract Procurement Details with AI",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Check PDF Extraction Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Procurement Details with AI": {
+      "main": [
+        [
+          {
+            "node": "Generate RFQ ID",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Merge Extraction Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI GPT-4": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Extract Procurement Details with AI",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Structured Procurement Data Parser": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "Extract Procurement Details with AI",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate RFQ ID": {
+      "main": [
+        [
+          {
+            "node": "Insert RFQ Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert RFQ Request": {
+      "main": [
+        [
+          {
+            "node": "Lookup AVL in Google Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lookup AVL in Google Sheets": {
+      "main": [
+        [
+          {
+            "node": "AVL Found?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AVL Found?": {
+      "main": [
+        [
+          {
+            "node": "Download AVL Document",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log AVL Not Found Event",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Notify Dev Team - AVL Lookup Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download AVL Document": {
+      "main": [
+        [
+          {
+            "node": "Extract Vendor List from AVL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Vendor List from AVL": {
+      "main": [
+        [
+          {
+            "node": "Extract Vendor Details with AI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Vendor Details with AI": {
+      "main": [
+        [
+          {
+            "node": "Prepare Vendor Loop Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI GPT-4 for Vendors": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Extract Vendor Details with AI",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Structured Vendor Data Parser": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "Extract Vendor Details with AI",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Vendor Loop Data": {
+      "main": [
+        [
+          {
+            "node": "Upsert Vendor Record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upsert Vendor Record": {
+      "main": [
+        [
+          {
+            "node": "Send RFQ Email to Vendor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send RFQ Email to Vendor": {
+      "main": [
+        [
+          {
+            "node": "Log Email Sent Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Email Sent Event": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Vendor Count",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate Vendor Count": {
+      "main": [
+        [
+          {
+            "node": "Update RFQ Status to Awaiting Responses",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update RFQ Status to Awaiting Responses": {
+      "main": [
+        [
+          {
+            "node": "Mark Email as Processed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Email as Processed": {
+      "main": [
+        [
+          {
+            "node": "Log Workflow Execution",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check PDF Extraction Status": {
+      "main": [
+        [
+          {
+            "node": "Extract Procurement Details with AI",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Email Body Text for Extraction",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Email Body Text for Extraction": {
+      "main": [
+        [
+          {
+            "node": "Extract from Email Body (Fallback)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract from Email Body (Fallback)": {
+      "main": [
+        [
+          {
+            "node": "Merge Extraction Results",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "OpenAI GPT-4 for Email Body": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Extract from Email Body (Fallback)",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Structured Parser for Email Body": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "Extract from Email Body (Fallback)",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Extraction Results": {
+      "main": [
+        [
+          {
+            "node": "Assess Extraction Quality",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Assess Extraction Quality": {
+      "main": [
+        [
+          {
+            "node": "Is Quality Acceptable?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Quality Acceptable?": {
+      "main": [
+        [
+          {
+            "node": "Generate RFQ ID",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log Extraction Quality Issue",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Extraction Quality Issue": {
+      "main": [
+        [
+          {
+            "node": "Notify Dev Team - Manual Upload Needed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Dev Team - Manual Upload Needed": {
+      "main": [
+        [
+          {
+            "node": "Track Memo Retry Count",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log AVL Not Found Event": {
+      "main": [
+        [
+          {
+            "node": "Update RFQ Status to Pending AVL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update RFQ Status to Pending AVL": {
+      "main": [
+        [
+          {
+            "node": "Track Retry Count",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 1 Hour for AVL": {
+      "main": [
+        [
+          {
+            "node": "Lookup AVL in Google Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Track Retry Count": {
+      "main": [
+        [
+          {
+            "node": "Wait 1 Hour for AVL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 1 Hour for Memo": {
+      "main": [
+        [
+          {
+            "node": "List Files in Project Initiation Folder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "List Files in Project Initiation Folder": {
+      "main": [
+        [
+          {
+            "node": "Match Memo File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Match Memo File": {
+      "main": [
+        [
+          {
+            "node": "Memo Found?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Memo Found?": {
+      "main": [
+        [
+          {
+            "node": "Download Matched Memo",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Wait 1 Hour for Memo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Matched Memo": {
+      "main": [
+        [
+          {
+            "node": "Extract Text from Uploaded Memo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Text from Uploaded Memo": {
+      "main": [
+        [
+          {
+            "node": "Extract Procurement Details with AI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Track Memo Retry Count": {
+      "main": [
+        [
+          {
+            "node": "Wait 1 Hour for Memo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "91e71e07-7a59-41b1-a9a0-3ec82d2111c8",
+  "meta": {
+    "instanceId": "5ff48a5b518af62534474e14d71c65115a3f49ab46ef1ddaf82c3d8f27abe8ab"
+  },
+  "id": "rsr33toRFUzaQQId",
+  "tags": []
+}

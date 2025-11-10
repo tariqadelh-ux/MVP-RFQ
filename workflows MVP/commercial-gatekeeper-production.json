@@ -1,0 +1,470 @@
+{
+  "name": "RFQ Commercial Gatekeeper - Production",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 1
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Check Every Hour",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/rfq_requests",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "select",
+              "value": "rfq_id,project_name,status,created_at,response_deadline"
+            },
+            {
+              "name": "status",
+              "value": "in.[awaiting_responses,responses_received]"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "get-active-rfqs",
+      "name": "Supabase - Get Active RFQs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [450, 300],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-api",
+          "name": "Supabase API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "id": "process-each-rfq",
+      "name": "Process Each RFQ",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3.1,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/vendor_offers",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "select",
+              "value": "vendor_id,vendor_name,compliance_status,created_at,updated_at"
+            },
+            {
+              "name": "rfq_id",
+              "value": "eq.{{ $json.rfq_id }}"
+            },
+            {
+              "name": "compliance_status",
+              "value": "eq.compliant"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "get-approved-vendors",
+      "name": "Supabase - Get Approved Vendors",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [850, 300],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-api",
+          "name": "Supabase API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Check quorum logic\nconst rfq = $('Process Each RFQ').item.json;\nconst approvedVendors = $json || [];\nconst vendorCount = approvedVendors.length;\n\n// Business rules\nconst MINIMUM_VENDORS = 2;\nconst QUORUM_VENDORS = 3;\nconst MAXIMUM_WAIT_DAYS = 7;\n\n// Calculate days since RFQ created\nconst rfqCreatedAt = new Date(rfq.created_at);\nconst now = new Date();\nconst daysSinceCreation = Math.floor((now - rfqCreatedAt) / (1000 * 60 * 60 * 24));\n\n// Find oldest approval date if vendors exist\nlet daysSinceFirstApproval = 0;\nif (vendorCount > 0) {\n  const approvalDates = approvedVendors\n    .map(v => new Date(v.updated_at))\n    .sort((a, b) => a - b);\n  \n  const oldestApproval = approvalDates[0];\n  daysSinceFirstApproval = Math.floor((now - oldestApproval) / (1000 * 60 * 60 * 24));\n}\n\n// Determine if we should trigger evaluation\nlet shouldTrigger = false;\nlet triggerReason = '';\n\nif (vendorCount >= QUORUM_VENDORS) {\n  shouldTrigger = true;\n  triggerReason = `Quorum reached with ${vendorCount} approved vendors`;\n} else if (vendorCount >= MINIMUM_VENDORS && daysSinceFirstApproval >= MAXIMUM_WAIT_DAYS) {\n  shouldTrigger = true;\n  triggerReason = `Timeout: ${vendorCount} vendors after ${MAXIMUM_WAIT_DAYS} days`;\n} else if (vendorCount >= MINIMUM_VENDORS) {\n  triggerReason = `Waiting for quorum: ${vendorCount}/${QUORUM_VENDORS} vendors (${daysSinceFirstApproval}/${MAXIMUM_WAIT_DAYS} days)`;\n} else {\n  triggerReason = `Insufficient vendors: ${vendorCount}/${MINIMUM_VENDORS} minimum required`;\n}\n\n// Log the check\nconsole.log(`[Gatekeeper] RFQ ${rfq.rfq_id}: ${triggerReason}`);\n\nreturn [{\n  json: {\n    rfq_id: rfq.rfq_id,\n    project_name: rfq.project_name,\n    vendor_count: vendorCount,\n    approved_vendors: approvedVendors.map(v => ({\n      vendor_id: v.vendor_id,\n      vendor_name: v.vendor_name,\n      approval_date: v.updated_at\n    })),\n    should_trigger_evaluation: shouldTrigger,\n    trigger_reason: triggerReason,\n    days_since_creation: daysSinceCreation,\n    days_since_first_approval: daysSinceFirstApproval,\n    check_timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "check-quorum",
+      "name": "Check Quorum Logic",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "leftValue": "={{ $json.should_trigger_evaluation }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "should-trigger",
+      "name": "Should Trigger Evaluation?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [1250, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/rfq_events",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"rfq_id\": \"{{ $json.rfq_id }}\",\n  \"event_type\": \"EVALUATION_TRIGGERED\",\n  \"title\": \"Commercial Evaluation Started\",\n  \"description\": \"{{ $json.trigger_reason }}\",\n  \"details\": {\n    \"vendor_count\": {{ $json.vendor_count }},\n    \"approved_vendors\": {{ JSON.stringify($json.approved_vendors) }},\n    \"days_waiting\": {{ $json.days_since_first_approval }}\n  }\n}",
+        "options": {}
+      },
+      "id": "log-trigger-event",
+      "name": "Supabase - Log Trigger Event",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1450, 200],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-api",
+          "name": "Supabase API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:5678/webhook/commercial-evaluation",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"rfq_id\": \"{{ $json.rfq_id }}\",\n  \"vendor_count\": {{ $json.vendor_count }},\n  \"trigger_reason\": \"{{ $json.trigger_reason }}\",\n  \"approved_vendors\": {{ JSON.stringify($json.approved_vendors) }}\n}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "trigger-evaluation",
+      "name": "Trigger Commercial Evaluation",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1650, 200]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/rfq_requests",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "rfq_id",
+              "value": "eq.{{ $json.rfq_id }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "status",
+              "value": "evaluation_in_progress"
+            },
+            {
+              "name": "evaluation_started_at",
+              "value": "={{ new Date().toISOString() }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "update-rfq-status",
+      "name": "Supabase - Update RFQ Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1850, 200],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-api",
+          "name": "Supabase API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/gatekeeper_logs",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"rfq_id\": \"{{ $json.rfq_id }}\",\n  \"check_result\": \"{{ $json.should_trigger_evaluation ? 'TRIGGER' : 'WAIT' }}\",\n  \"vendor_count\": {{ $json.vendor_count }},\n  \"reason\": \"{{ $json.trigger_reason }}\",\n  \"days_since_first_approval\": {{ $json.days_since_first_approval }},\n  \"checked_at\": \"{{ $json.check_timestamp }}\"\n}",
+        "options": {}
+      },
+      "id": "log-check",
+      "name": "Supabase - Log Check Result",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1250, 500],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-api",
+          "name": "Supabase API"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "id": "continue-loop",
+      "name": "Continue to Next RFQ",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [1450, 400]
+    },
+    {
+      "parameters": {},
+      "id": "error-trigger",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [250, 700]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/workflow_executions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"workflow_name\": \"commercial_gatekeeper\",\n  \"execution_id\": \"{{ $execution.id }}\",\n  \"status\": \"error\",\n  \"error_message\": \"{{ $json.error.message }}\",\n  \"error_node\": \"{{ $json.error.node?.name || 'Unknown' }}\",\n  \"error_details\": {{ JSON.stringify($json.error) }}\n}",
+        "options": {}
+      },
+      "id": "log-error",
+      "name": "Supabase - Log Error",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [450, 700],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-api",
+          "name": "Supabase API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "binquraya.procurement.demo+management@gmail.com",
+        "subject": "=🎯 Commercial Evaluation Started - {{ $json.rfq_id }}",
+        "emailType": "html",
+        "message": "=<!DOCTYPE html>\n<html>\n<head>\n  <style>\n    body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }\n    .container { max-width: 700px; margin: 0 auto; }\n    .header { background: linear-gradient(135deg, #2c3e50, #1a252f); color: white; padding: 30px; text-align: center; }\n    .logo { max-width: 180px; margin-bottom: 20px; }\n    .content { background: white; padding: 30px; border: 1px solid #ddd; }\n    .info-box { background: #f0f8ff; padding: 15px; border-left: 4px solid #2c5aa0; margin: 20px 0; }\n    table { width: 100%; border-collapse: collapse; margin: 20px 0; }\n    th, td { padding: 10px; text-align: left; border: 1px solid #ddd; }\n    th { background: #f5f5f5; }\n  </style>\n</head>\n<body>\n  <div class=\"container\">\n    <div class=\"header\">\n      <img src=\"https://drive.google.com/uc?export=view&id=1eKki6KsEVObBe6xc_b1zYibDqVloE416\" alt=\"Bin Quraya\" class=\"logo\">\n      <h1>COMMERCIAL EVALUATION TRIGGERED</h1>\n    </div>\n    \n    <div class=\"content\">\n      <div class=\"info-box\">\n        <p><strong>RFQ ID:</strong> {{ $json.rfq_id }}</p>\n        <p><strong>Project:</strong> {{ $json.project_name }}</p>\n        <p><strong>Trigger Reason:</strong> {{ $json.trigger_reason }}</p>\n      </div>\n      \n      <h3>Approved Vendors for Evaluation</h3>\n      <table>\n        <tr>\n          <th>Vendor Name</th>\n          <th>Vendor ID</th>\n          <th>Approval Date</th>\n        </tr>\n        {{ $json.approved_vendors.map(v => `\n        <tr>\n          <td>${v.vendor_name}</td>\n          <td>${v.vendor_id}</td>\n          <td>${new Date(v.approval_date).toLocaleDateString()}</td>\n        </tr>`).join('') }}\n      </table>\n      \n      <p><strong>Next Steps:</strong></p>\n      <ul>\n        <li>Commercial evaluation workflow is now processing these vendors</li>\n        <li>Weighted scoring model will be applied</li>\n        <li>You will receive a decision package shortly</li>\n      </ul>\n    </div>\n  </div>\n</body>\n</html>",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "notify-management",
+      "name": "Notify Management",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [1650, 100],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "gmail-oauth2",
+          "name": "Gmail account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Check Every Hour": {
+      "main": [
+        [
+          {
+            "node": "Supabase - Get Active RFQs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase - Get Active RFQs": {
+      "main": [
+        [
+          {
+            "node": "Process Each RFQ",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Each RFQ": {
+      "main": [
+        [
+          {
+            "node": "Supabase - Get Approved Vendors",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase - Get Approved Vendors": {
+      "main": [
+        [
+          {
+            "node": "Check Quorum Logic",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Quorum Logic": {
+      "main": [
+        [
+          {
+            "node": "Should Trigger Evaluation?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Should Trigger Evaluation?": {
+      "main": [
+        [
+          {
+            "node": "Supabase - Log Trigger Event",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Supabase - Log Check Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase - Log Trigger Event": {
+      "main": [
+        [
+          {
+            "node": "Notify Management",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Trigger Commercial Evaluation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Trigger Commercial Evaluation": {
+      "main": [
+        [
+          {
+            "node": "Supabase - Update RFQ Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase - Update RFQ Status": {
+      "main": [
+        [
+          {
+            "node": "Supabase - Log Check Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase - Log Check Result": {
+      "main": [
+        [
+          {
+            "node": "Continue to Next RFQ",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Continue to Next RFQ": {
+      "main": [
+        [
+          {
+            "node": "Process Each RFQ",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Supabase - Log Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "pinData": {},
+  "versionId": "production-v1",
+  "triggerCount": 1,
+  "tags": [
+    {
+      "name": "production",
+      "createdAt": "2024-01-01T00:00:00.000Z"
+    }
+  ]
+}

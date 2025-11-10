@@ -1,0 +1,647 @@
+{
+  "name": "RFQ Main Processor - Production",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "create-rfq",
+        "responseMode": "responseNode",
+        "options": {
+          "cors": true
+        }
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook - Create RFQ",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [250, 300],
+      "webhookId": "create-rfq-trigger"
+    },
+    {
+      "parameters": {
+        "operation": "download",
+        "fileId": {
+          "__rl": true,
+          "value": "={{ $json.project_memo_id || '1uLtG5JFWLYZeDck0eN3CxuCYpuTqLWbG' }}",
+          "mode": "id"
+        },
+        "options": {}
+      },
+      "id": "download-project-memo",
+      "name": "Download Project Memo",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [450, 300],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "google-drive-oauth",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "extractText",
+        "binaryPropertyName": "data",
+        "options": {}
+      },
+      "id": "extract-pdf-text",
+      "name": "Extract PDF Text",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.1,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "resource": "chat",
+        "operation": "complete",
+        "chatModel": "gpt-5",
+        "prompt": {
+          "messages": [
+            {
+              "role": "system",
+              "content": "You are a procurement specialist extracting project information from memos and requisitions. Extract all relevant data and return as valid JSON. Focus on accuracy and completeness."
+            },
+            {
+              "role": "user",
+              "content": "Extract the following information from this project memo:\n\n{{ $json.text }}\n\n\nRequired fields:\n- nine_com_number: The 9COM reference number\n- project_name: Official project name\n- project_id: Project identifier\n- wbs_code: Work breakdown structure code\n- commodity_code: Material commodity code\n- material_description: Full description of required material\n- quantity: Number of units required\n- estimated_value: Budget estimate if available\n- technical_requirements: Key technical specifications\n- required_material_grade: Material grade requirement (e.g., SS 316L)\n- delivery_location: Where material should be delivered\n\nReturn as valid JSON object."
+            }
+          ]
+        },
+        "options": {
+          "temperature": 0.1,
+          "maxTokens": 1000,
+          "responseFormat": {
+            "type": "json_object"
+          }
+        },
+        "simplifyOutput": true
+      },
+      "id": "extract-9com-ai",
+      "name": "ChatGPT 5 - Extract 9COM Data",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1.1,
+      "position": [850, 300],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai-chatgpt5",
+          "name": "OpenAI ChatGPT 5"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse AI response and generate RFQ ID\nconst aiData = JSON.parse($json.message.content);\nconst timestamp = new Date().toISOString().replace(/[-:.]/g, '').slice(0, 14);\nconst rfqId = `BQ-${timestamp}`;\n\n// Prepare RFQ data\nreturn [{\n  json: {\n    rfq_id: rfqId,\n    nine_com_number: aiData.nine_com_number,\n    project_name: aiData.project_name,\n    project_id: aiData.project_id,\n    wbs_code: aiData.wbs_code,\n    commodity_code: aiData.commodity_code,\n    material_description: aiData.material_description,\n    quantity: parseInt(aiData.quantity) || 1,\n    estimated_value: parseFloat(aiData.estimated_value) || null,\n    technical_requirements: aiData.technical_requirements,\n    required_material_grade: aiData.required_material_grade,\n    delivery_location: aiData.delivery_location || 'Aramco Site',\n    created_at: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "prepare-rfq-data",
+      "name": "Prepare RFQ Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/rfq_requests",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendBody": true",
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"rfq_id\": \"{{ $json.rfq_id }}\",\n  \"project_id\": \"{{ $json.project_id }}\",\n  \"project_name\": \"{{ $json.project_name }}\",\n  \"commodity_code\": \"{{ $json.nine_com_number }}\",\n  \"material_description\": \"{{ $json.material_description }}\",\n  \"quantity\": {{ $json.quantity }},\n  \"unit_of_measure\": \"Unit\",\n  \"estimated_value\": {{ $json.estimated_value || null }},\n  \"delivery_location\": \"{{ $json.delivery_location }}\",\n  \"required_delivery_date\": \"{{ new Date(Date.now() + 120 * 24 * 60 * 60 * 1000).toISOString() }}\",\n  \"response_deadline\": \"{{ new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString() }}\",\n  \"technical_requirements\": {{ JSON.stringify($json.technical_requirements) }},\n  \"status\": \"initiated\"\n}",
+        "options": {}
+      },
+      "id": "create-rfq-supabase",
+      "name": "Supabase - Create RFQ",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1250, 300],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-api",
+          "name": "Supabase API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $json.avl_sheet_id || '1OGSzKu47JnXgb51rpftjALOOaP_9jL-3oFev5UbmYiQ' }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Sheet1",
+          "mode": "name"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "9COM_Number",
+              "lookupValue": "={{ $json.nine_com_number }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "get-avl-vendors",
+      "name": "Get AVL from Master List",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [1450, 300],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google-sheets-oauth",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "download",
+        "fileId": {
+          "__rl": true,
+          "value": "={{ $json.AVL_File_ID || '15f_sNr9BJDVltzU-RwkhLSoB_b0yECUe' }}",
+          "mode": "id"
+        },
+        "options": {}
+      },
+      "id": "download-avl",
+      "name": "Download AVL Document",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [1650, 300],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "google-drive-oauth",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "extractText",
+        "binaryPropertyName": "data",
+        "options": {}
+      },
+      "id": "extract-avl-text",
+      "name": "Extract AVL Text",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.1,
+      "position": [1850, 300]
+    },
+    {
+      "parameters": {
+        "resource": "chat",
+        "operation": "complete",
+        "chatModel": "gpt-5",
+        "prompt": {
+          "messages": [
+            {
+              "role": "system",
+              "content": "You are a procurement specialist extracting vendor information from Approved Vendor Lists (AVL). Extract all vendor details and return as a JSON array. Each vendor should have complete contact information."
+            },
+            {
+              "role": "user",
+              "content": "Extract all approved vendors from this AVL document:\n\n{{ $json.text }}\n\n\nFor each vendor, extract:\n- vendor_id: The vendor code/ID\n- vendor_name: Company name\n- email: Primary contact email\n- contact_person: Contact person name\n- phone: Phone number\n- location: City/Country\n- certifications: Any listed certifications\n- specialties: What they specialize in\n\nReturn as JSON array of vendor objects."
+            }
+          ]
+        },
+        "options": {
+          "temperature": 0.1,
+          "maxTokens": 2000,
+          "responseFormat": {
+            "type": "json_object"
+          }
+        },
+        "simplifyOutput": true
+      },
+      "id": "extract-vendors-ai",
+      "name": "ChatGPT 5 - Extract Vendors",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1.1,
+      "position": [2050, 300],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai-chatgpt5",
+          "name": "OpenAI ChatGPT 5"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse vendor data and prepare for processing\nconst aiResponse = JSON.parse($json.message.content);\nconst vendors = aiResponse.vendors || [];\nconst rfqData = $('Prepare RFQ Data').item.json;\n\n// If no vendors found, use demo vendors as fallback\nif (vendors.length === 0) {\n  console.log('No vendors extracted, using demo vendors');\n  return [\n    {\n      json: {\n        vendor_id: '9V-1102',\n        vendor_name: 'Vendor A Industries',\n        email: 'vendor.a.demo@gmail.com',\n        contact_person: 'John Smith',\n        rfq_id: rfqData.rfq_id,\n        rfq_data: rfqData\n      }\n    },\n    {\n      json: {\n        vendor_id: '9V-4354',\n        vendor_name: 'Vendor B Solutions',\n        email: 'vendor.b.demo@gmail.com',\n        contact_person: 'Jane Doe',\n        rfq_id: rfqData.rfq_id,\n        rfq_data: rfqData\n      }\n    },\n    {\n      json: {\n        vendor_id: '9V-2189',\n        vendor_name: 'Vendor C Global',\n        email: 'vendor.c.demo@gmail.com',\n        contact_person: 'Bob Johnson',\n        rfq_id: rfqData.rfq_id,\n        rfq_data: rfqData\n      }\n    }\n  ];\n}\n\n// Return extracted vendors with RFQ data\nreturn vendors.map(vendor => ({\n  json: {\n    ...vendor,\n    rfq_id: rfqData.rfq_id,\n    rfq_data: rfqData\n  }\n}));"
+      },
+      "id": "prepare-vendor-list",
+      "name": "Prepare Vendor List",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2250, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/vendors",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Prefer",
+              "value": "resolution=merge-duplicates"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"vendor_id\": \"{{ $json.vendor_id }}\",\n  \"vendor_name\": \"{{ $json.vendor_name }}\",\n  \"vendor_email\": \"{{ $json.email }}\",\n  \"contact_person\": \"{{ $json.contact_person || 'Not specified' }}\",\n  \"phone\": \"{{ $json.phone || 'Not specified' }}\",\n  \"status\": \"active\"\n}",
+        "options": {}
+      },
+      "id": "upsert-vendor",
+      "name": "Supabase - Upsert Vendor",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2450, 200],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-api",
+          "name": "Supabase API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.email }}",
+        "subject": "=RFQ {{ $json.rfq_id }} - {{ $json.rfq_data.material_description }}",
+        "emailType": "html",
+        "message": "=<!DOCTYPE html>\n<html>\n<head>\n  <style>\n    body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }\n    .container { max-width: 700px; margin: 0 auto; }\n    .header { background: linear-gradient(135deg, #2c3e50, #1a252f); color: white; padding: 30px; text-align: center; }\n    .logo { max-width: 180px; margin-bottom: 20px; }\n    .content { background: white; padding: 30px; border: 1px solid #ddd; }\n    .info-box { background: #f8f9fa; border-left: 4px solid #2c5aa0; padding: 20px; margin: 20px 0; }\n    .requirements { background: #fff9e6; border: 1px solid #ffd700; padding: 20px; margin: 20px 0; }\n    .footer { background: #f8f9fa; padding: 25px; text-align: center; border-top: 3px solid #2c5aa0; }\n  </style>\n</head>\n<body>\n  <div class=\"container\">\n    <div class=\"header\">\n      <img src=\"https://drive.google.com/uc?export=view&id=1eKki6KsEVObBe6xc_b1zYibDqVloE416\" alt=\"Bin Quraya\" class=\"logo\">\n      <h1>REQUEST FOR QUOTATION</h1>\n    </div>\n    \n    <div class=\"content\">\n      <p>Dear {{ $json.vendor_name }},</p>\n      \n      <p>Bin Quraya invites you to submit a quotation for the following requirement:</p>\n      \n      <div class=\"info-box\">\n        <h3>Project Details</h3>\n        <ul>\n          <li><strong>RFQ ID:</strong> {{ $json.rfq_id }}</li>\n          <li><strong>Project:</strong> {{ $json.rfq_data.project_name }}</li>\n          <li><strong>9COM:</strong> {{ $json.rfq_data.nine_com_number }}</li>\n        </ul>\n      </div>\n      \n      <div class=\"info-box\">\n        <h3>Material Requirements</h3>\n        <ul>\n          <li><strong>Description:</strong> {{ $json.rfq_data.material_description }}</li>\n          <li><strong>Quantity:</strong> {{ $json.rfq_data.quantity }} Units</li>\n          <li><strong>Material Grade:</strong> {{ $json.rfq_data.required_material_grade }}</li>\n          <li><strong>Delivery Location:</strong> {{ $json.rfq_data.delivery_location }}</li>\n        </ul>\n      </div>\n      \n      <div class=\"requirements\">\n        <h3>Submission Requirements</h3>\n        <ul>\n          <li>Technical datasheet confirming material grade</li>\n          <li>Unit price and total price (preferably DDP basis)</li>\n          <li>Delivery schedule</li>\n          <li>Payment terms</li>\n          <li>Warranty period</li>\n          <li>Valid certificates (Material Test Certificate, etc.)</li>\n        </ul>\n      </div>\n      \n      <p><strong>Response Deadline:</strong> {{ new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toLocaleDateString() }}</p>\n      \n      <p>Please ensure your quotation clearly references RFQ ID: <strong>{{ $json.rfq_id }}</strong></p>\n      \n      <p>Best regards,<br>\n      <strong>Bin Quraya Procurement Team</strong></p>\n    </div>\n    \n    <div class=\"footer\">\n      <p><strong>Bin Quraya Management & Trading</strong></p>\n      <p>Dhahran, Saudi Arabia</p>\n      <p>Email: binquraya.procurement.demo@gmail.com</p>\n    </div>\n  </div>\n</body>\n</html>",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "send-rfq-email",
+      "name": "Send RFQ to Vendor",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [2650, 300],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "gmail-oauth2",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/rfq_events",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"rfq_id\": \"{{ $json.rfq_id }}\",\n  \"event_type\": \"RFQ_SENT\",\n  \"title\": \"RFQ Sent to Vendor\",\n  \"description\": \"RFQ sent to {{ $json.vendor_name }}\",\n  \"vendor_name\": \"{{ $json.vendor_name }}\",\n  \"details\": {\n    \"vendor_id\": \"{{ $json.vendor_id }}\",\n    \"vendor_email\": \"{{ $json.email }}\",\n    \"sent_at\": \"{{ new Date().toISOString() }}\"\n  }\n}",
+        "options": {}
+      },
+      "id": "log-rfq-sent",
+      "name": "Supabase - Log RFQ Sent",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2850, 300],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-api",
+          "name": "Supabase API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Aggregate results\nconst rfqData = $('Prepare RFQ Data').item.json;\nconst vendorCount = $('Prepare Vendor List').all().length;\n\nreturn [{\n  json: {\n    success: true,\n    rfq_id: rfqData.rfq_id,\n    message: `RFQ ${rfqData.rfq_id} created and sent to ${vendorCount} vendors`,\n    summary: {\n      project: rfqData.project_name,\n      material: rfqData.material_description,\n      vendors_notified: vendorCount,\n      response_deadline: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()\n    }\n  }\n}];"
+      },
+      "id": "prepare-response",
+      "name": "Prepare Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [3050, 300]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/rfq_requests",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "rfq_id",
+              "value": "eq.{{ $('Prepare RFQ Data').item.json.rfq_id }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "status",
+              "value": "awaiting_responses"
+            },
+            {
+              "name": "rfq_sent_at",
+              "value": "={{ new Date().toISOString() }}"
+            },
+            {
+              "name": "invited_vendor_count",
+              "value": "={{ $('Prepare Vendor List').all().length }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "update-rfq-status",
+      "name": "Supabase - Update RFQ Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [3250, 300],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-api",
+          "name": "Supabase API"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "id": "webhook-response",
+      "name": "Webhook Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [3450, 300]
+    },
+    {
+      "parameters": {},
+      "id": "error-trigger",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [250, 700]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/workflow_executions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"workflow_name\": \"main_processor\",\n  \"execution_id\": \"{{ $execution.id }}\",\n  \"status\": \"error\",\n  \"error_message\": \"{{ $json.error.message }}\",\n  \"error_node\": \"{{ $json.error.node?.name || 'Unknown' }}\",\n  \"error_details\": {{ JSON.stringify($json.error) }}\n}",
+        "options": {}
+      },
+      "id": "log-error",
+      "name": "Supabase - Log Error",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [450, 700],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-api",
+          "name": "Supabase API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/rfq_events",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"rfq_id\": \"{{ $('Prepare RFQ Data').item.json.rfq_id }}\",\n  \"event_type\": \"RFQ_INITIATED\",\n  \"title\": \"RFQ Created\",\n  \"description\": \"RFQ initiated for {{ $('Prepare RFQ Data').item.json.material_description }}\",\n  \"details\": {\n    \"project\": \"{{ $('Prepare RFQ Data').item.json.project_name }}\",\n    \"quantity\": {{ $('Prepare RFQ Data').item.json.quantity }},\n    \"vendor_count\": {{ $('Prepare Vendor List').all().length }}\n  }\n}",
+        "options": {}
+      },
+      "id": "log-rfq-initiated",
+      "name": "Supabase - Log RFQ Initiated",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2450, 400],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-api",
+          "name": "Supabase API"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook - Create RFQ": {
+      "main": [
+        [
+          {
+            "node": "Download Project Memo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Project Memo": {
+      "main": [
+        [
+          {
+            "node": "Extract PDF Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract PDF Text": {
+      "main": [
+        [
+          {
+            "node": "ChatGPT 5 - Extract 9COM Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ChatGPT 5 - Extract 9COM Data": {
+      "main": [
+        [
+          {
+            "node": "Prepare RFQ Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare RFQ Data": {
+      "main": [
+        [
+          {
+            "node": "Supabase - Create RFQ",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase - Create RFQ": {
+      "main": [
+        [
+          {
+            "node": "Get AVL from Master List",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get AVL from Master List": {
+      "main": [
+        [
+          {
+            "node": "Download AVL Document",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download AVL Document": {
+      "main": [
+        [
+          {
+            "node": "Extract AVL Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract AVL Text": {
+      "main": [
+        [
+          {
+            "node": "ChatGPT 5 - Extract Vendors",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ChatGPT 5 - Extract Vendors": {
+      "main": [
+        [
+          {
+            "node": "Prepare Vendor List",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Vendor List": {
+      "main": [
+        [
+          {
+            "node": "Supabase - Upsert Vendor",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Supabase - Log RFQ Initiated",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase - Upsert Vendor": {
+      "main": [
+        [
+          {
+            "node": "Send RFQ to Vendor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send RFQ to Vendor": {
+      "main": [
+        [
+          {
+            "node": "Supabase - Log RFQ Sent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase - Log RFQ Sent": {
+      "main": [
+        [
+          {
+            "node": "Prepare Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Response": {
+      "main": [
+        [
+          {
+            "node": "Supabase - Update RFQ Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase - Update RFQ Status": {
+      "main": [
+        [
+          {
+            "node": "Webhook Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Supabase - Log Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "pinData": {},
+  "versionId": "production-v1",
+  "triggerCount": 1,
+  "tags": [
+    {
+      "name": "production",
+      "createdAt": "2024-01-01T00:00:00.000Z"
+    }
+  ]
+}

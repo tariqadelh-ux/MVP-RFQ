@@ -1,0 +1,532 @@
+{
+  "name": "RFQ Commercial Evaluation - Production",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "commercial-evaluation",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook from Gatekeeper",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        250,
+        300
+      ],
+      "webhookId": "commercial-evaluation-trigger"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/vendor_offers",
+        "authentication": "genericCredentialType",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Prefer",
+              "value": "return=representation"
+            },
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_ANON_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "select",
+              "value": "*,vendors(*)"
+            },
+            {
+              "name": "rfq_id",
+              "value": "eq.{{ $json.rfq_id }}"
+            },
+            {
+              "name": "compliance_status",
+              "value": "eq.compliant"
+            }
+          ]
+        },
+        "options": {},
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "id": "get-vendor-offers",
+      "name": "Supabase - Get Approved Offers",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        450,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Apply commercial scoring model\nconst offers = $json;\n\nif (!offers || offers.length === 0) {\n  return [{\n    json: {\n      error: 'No approved vendors found',\n      rfq_id: $('webhook-trigger').item.json.rfq_id\n    }\n  }];\n}\n\n// Extract numeric values\nconst prices = offers.map(o => parseFloat(o.unit_price));\nconst deliveries = offers.map(o => parseInt(o.delivery_days));\nconst warranties = offers.map(o => parseInt(o.warranty_months) || 12);\n\nconst lowestPrice = Math.min(...prices);\nconst shortestDelivery = Math.min(...deliveries);\nconst longestWarranty = Math.max(...warranties);\n\n// Score each vendor\nconst scoredOffers = offers.map(offer => {\n  // Price score (40% weight) - lower is better\n  const priceScore = (lowestPrice / parseFloat(offer.unit_price)) * 100;\n  \n  // Delivery score (30% weight) - shorter is better\n  const deliveryScore = (shortestDelivery / parseInt(offer.delivery_days)) * 100;\n  \n  // Payment terms score (20% weight)\n  const paymentTermsMap = {\n    '30/70': 100,  // Best terms\n    '20/80': 85,\n    '10/90': 70,\n    '40/60': 60,\n    '50/50': 50,\n    '100/0': 0     // Worst terms\n  };\n  const paymentScore = paymentTermsMap[offer.payment_terms] || 50;\n  \n  // Warranty score (10% weight)\n  const warrantyScore = (parseInt(offer.warranty_months) / longestWarranty) * 100;\n  \n  // Calculate weighted total\n  const totalScore = \n    (priceScore * 0.40) +\n    (deliveryScore * 0.30) +\n    (paymentScore * 0.20) +\n    (warrantyScore * 0.10);\n  \n  return {\n    ...offer,\n    scores: {\n      price: priceScore.toFixed(2),\n      delivery: deliveryScore.toFixed(2),\n      payment: paymentScore,\n      warranty: warrantyScore.toFixed(2)\n    },\n    total_score: totalScore.toFixed(2)\n  };\n});\n\n// Sort by total score\nscoredOffers.sort((a, b) => parseFloat(b.total_score) - parseFloat(a.total_score));\n\n// Add rank\nconst rankedOffers = scoredOffers.map((offer, index) => ({\n  ...offer,\n  rank: index + 1\n}));\n\nreturn [{\n  json: {\n    rfq_id: $('webhook-trigger').item.json.rfq_id,\n    scored_offers: rankedOffers,\n    winner: rankedOffers[0],\n    evaluation_date: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "calculate-scores",
+      "name": "Calculate Commercial Scores",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        650,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "chat",
+        "operation": "complete",
+        "options": {
+          "temperature": 0.3,
+          "maxTokens": 1000
+        },
+        "simplifyOutput": true,
+        "model": {
+          "__rl": true,
+          "value": "gpt-4o",
+          "mode": "list"
+        },
+        "messages": {
+          "values": [
+            {
+              "role": "system",
+              "content": "You are a procurement specialist creating executive summaries for vendor selection decisions. Focus on clear recommendations, financial impact, and key differentiators. Be concise but comprehensive."
+            },
+            {
+              "role": "user",
+              "content": "Generate an executive summary for this commercial evaluation:\n\nRFQ ID: {{ $json.rfq_id }}\nItem: High-Pressure Shell & Tube Heat Exchanger\nMaterial Required: SS 316L\n\nVendor Analysis:\n{{ JSON.stringify($json.scored_offers, null, 2) }}\n\nProvide:\n1. Clear recommendation with vendor name\n2. Price comparison and potential savings\n3. Key strengths of recommended vendor\n4. Any risks or considerations\n5. Brief justification (2-3 sentences)"
+            }
+          ]
+        }
+      },
+      "id": "generate-summary",
+      "name": "ChatGPT 5 - Generate Summary",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1.1,
+      "position": [
+        850,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "run",
+        "batchSize": 1,
+        "options": {}
+      },
+      "id": "update-scores-batch",
+      "name": "Update Each Vendor Score",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3.1,
+      "position": [
+        1050,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/vendor_offers",
+        "authentication": "genericCredentialType",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Prefer",
+              "value": "return=representation"
+            },
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_ANON_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "id",
+              "value": "eq.{{ $json.id }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "commercial_score",
+              "value": "={{ $json.total_score }}"
+            },
+            {
+              "name": "commercial_rank",
+              "value": "={{ $json.rank }}"
+            },
+            {
+              "name": "score_details",
+              "value": "={{ JSON.stringify($json.scores) }}"
+            },
+            {
+              "name": "evaluated_at",
+              "value": "={{ new Date().toISOString() }}"
+            }
+          ]
+        },
+        "options": {},
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "id": "update-vendor-score",
+      "name": "Supabase - Update Vendor Score",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1250,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Prepare decision package data\nconst evaluation = $('calculate-scores').item.json;\nconst summary = $json.message.content;\nconst winner = evaluation.winner;\n\n// Calculate savings vs highest price\nconst prices = evaluation.scored_offers.map(o => parseFloat(o.unit_price));\nconst highestPrice = Math.max(...prices);\nconst savings = highestPrice - parseFloat(winner.unit_price);\nconst savingsPercent = ((savings / highestPrice) * 100).toFixed(1);\n\nreturn [{\n  json: {\n    rfq_id: evaluation.rfq_id,\n    recommendation: {\n      vendor_name: winner.vendor_name || winner.vendors.vendor_name,\n      vendor_id: winner.vendor_id,\n      price: winner.unit_price,\n      currency: winner.currency,\n      delivery_days: winner.delivery_days,\n      payment_terms: winner.payment_terms,\n      score: winner.total_score,\n      rank: winner.rank\n    },\n    financial_analysis: {\n      recommended_price: parseFloat(winner.unit_price),\n      highest_price: highestPrice,\n      potential_savings: savings,\n      savings_percentage: savingsPercent\n    },\n    executive_summary: summary,\n    vendor_comparison: evaluation.scored_offers.map(v => ({\n      vendor: v.vendor_name || v.vendors.vendor_name,\n      price: v.unit_price,\n      delivery: v.delivery_days,\n      score: v.total_score,\n      rank: v.rank\n    })),\n    evaluation_metadata: {\n      total_vendors_evaluated: evaluation.scored_offers.length,\n      evaluation_model: 'BQ-PROC-MODEL-001',\n      weights_used: {\n        price: '40%',\n        delivery: '30%',\n        payment_terms: '20%',\n        warranty: '10%'\n      },\n      evaluated_at: new Date().toISOString()\n    }\n  }\n}];"
+      },
+      "id": "prepare-decision-package",
+      "name": "Prepare Decision Package",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1050,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/rfq_events",
+        "authentication": "genericCredentialType",
+        "sendBody": true,
+        "options": {},
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_ANON_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "bodyParameters": {
+          "parameters": []
+        }
+      },
+      "id": "log-evaluation-event",
+      "name": "Supabase - Log Evaluation Event",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1250,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "=binquraya.procurement.demo+management@gmail.com",
+        "subject": "=🎯 DECISION REQUIRED: {{ $json.rfq_id }} - Award to {{ $json.recommendation.vendor_name }}",
+        "emailType": "html",
+        "message": "=<!DOCTYPE html>\n<html>\n<head>\n  <style>\n    body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }\n    .container { max-width: 700px; margin: 0 auto; }\n    .header { background: linear-gradient(135deg, #2c3e50, #1a252f); color: white; padding: 30px; text-align: center; }\n    .logo { max-width: 180px; margin-bottom: 20px; }\n    .content { background: white; padding: 30px; border: 1px solid #ddd; }\n    .recommendation { background: #e8f5e9; border-left: 5px solid #4caf50; padding: 20px; margin: 20px 0; }\n    table { width: 100%; border-collapse: collapse; margin: 20px 0; }\n    th, td { padding: 10px; text-align: left; border: 1px solid #ddd; }\n    th { background: #f5f5f5; font-weight: bold; }\n    .winner-row { background: #e8f5e9; font-weight: bold; }\n    .cta { text-align: center; margin: 30px 0; }\n    .button { display: inline-block; padding: 15px 30px; background: #2c5aa0; color: white; text-decoration: none; border-radius: 5px; }\n  </style>\n</head>\n<body>\n  <div class=\"container\">\n    <div class=\"header\">\n      <img src=\"https://drive.google.com/uc?export=view&id=1eKki6KsEVObBe6xc_b1zYibDqVloE416\" alt=\"Bin Quraya\" class=\"logo\">\n      <h1>COMMERCIAL EVALUATION COMPLETE</h1>\n    </div>\n    \n    <div class=\"content\">\n      <div class=\"recommendation\">\n        <h2>✅ Recommendation: Award to {{ $json.recommendation.vendor_name }}</h2>\n        <p><strong>Score:</strong> {{ $json.recommendation.score }}/100</p>\n        <p><strong>Price:</strong> {{ $json.recommendation.currency }} {{ $json.recommendation.price }}</p>\n        <p><strong>Savings:</strong> {{ $json.recommendation.currency }} {{ $json.financial_analysis.potential_savings }} ({{ $json.financial_analysis.savings_percentage }}%)</p>\n      </div>\n      \n      <h3>Executive Summary</h3>\n      <p>{{ $json.executive_summary }}</p>\n      \n      <h3>Vendor Comparison</h3>\n      <table>\n        <tr>\n          <th>Rank</th>\n          <th>Vendor</th>\n          <th>Price ({{ $json.recommendation.currency }})</th>\n          <th>Delivery (Days)</th>\n          <th>Score</th>\n        </tr>\n        {{ $json.vendor_comparison.map((v, i) => `\n        <tr class=\"${i === 0 ? 'winner-row' : ''}\">\n          <td>${v.rank}</td>\n          <td>${v.vendor}</td>\n          <td>${v.price.toLocaleString()}</td>\n          <td>${v.delivery}</td>\n          <td>${v.score}</td>\n        </tr>`).join('') }}\n      </table>\n      \n      <p><strong>Evaluation Model:</strong> {{ $json.evaluation_metadata.evaluation_model }}</p>\n      <p><strong>Evaluation Date:</strong> {{ new Date($json.evaluation_metadata.evaluated_at).toLocaleString() }}</p>\n      \n      <div class=\"cta\">\n        <a href=\"{{ $env.DASHBOARD_URL }}/rfq/{{ $json.rfq_id }}\" class=\"button\">VIEW FULL ANALYSIS</a>\n      </div>\n    </div>\n  </div>\n</body>\n</html>",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "send-decision-email",
+      "name": "Send Decision to Management",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        1450,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/rfq_requests",
+        "authentication": "genericCredentialType",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "rfq_id",
+              "value": "eq.{{ $json.rfq_id }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "status",
+              "value": "decision_pending"
+            },
+            {
+              "name": "commercial_evaluation_at",
+              "value": "={{ new Date().toISOString() }}"
+            },
+            {
+              "name": "recommended_vendor_id",
+              "value": "={{ $json.recommendation.vendor_id }}"
+            }
+          ]
+        },
+        "options": {},
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_ANON_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        }
+      },
+      "id": "update-rfq-status",
+      "name": "Supabase - Update RFQ Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1650,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "content": "=## Webhook Response\n\nReturn success status to Gatekeeper",
+        "color": 4
+      },
+      "id": "webhook-response-note",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1850,
+        250
+      ]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "webhook-response",
+      "name": "Webhook Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        1850,
+        400
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "error-trigger",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        250,
+        700
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/workflow_executions",
+        "authentication": "genericCredentialType",
+        "sendBody": true,
+        "options": {},
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_ANON_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "bodyParameters": {
+          "parameters": []
+        }
+      },
+      "id": "log-error",
+      "name": "Supabase - Log Error",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        450,
+        700
+      ]
+    }
+  ],
+  "connections": {
+    "webhook-trigger": {
+      "main": [
+        [
+          {
+            "node": "get-vendor-offers",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "get-vendor-offers": {
+      "main": [
+        [
+          {
+            "node": "calculate-scores",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "calculate-scores": {
+      "main": [
+        [
+          {
+            "node": "generate-summary",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "update-scores-batch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "generate-summary": {
+      "main": [
+        [
+          {
+            "node": "prepare-decision-package",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "update-scores-batch": {
+      "main": [
+        [
+          {
+            "node": "update-vendor-score",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "update-vendor-score": {
+      "main": [
+        [
+          {
+            "node": "update-scores-batch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "prepare-decision-package": {
+      "main": [
+        [
+          {
+            "node": "log-evaluation-event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "log-evaluation-event": {
+      "main": [
+        [
+          {
+            "node": "send-decision-email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "send-decision-email": {
+      "main": [
+        [
+          {
+            "node": "update-rfq-status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "update-rfq-status": {
+      "main": [
+        [
+          {
+            "node": "webhook-response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "error-trigger": {
+      "main": [
+        [
+          {
+            "node": "log-error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveExecutionProgress": true,
+    "saveManualExecutions": true,
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "executionTimeout": 300,
+    "timezone": "Asia/Riyadh"
+  }
+}

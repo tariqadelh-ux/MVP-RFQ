@@ -1,0 +1,545 @@
+{
+  "name": "Bin Quraya RFQ - Commercial Evaluation with PDF Generation",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "a06d4287-13d4-47a2-a479-06f6c4a99a39",
+      "name": "Manual Trigger (Testing)",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -656,
+        112
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "62277023-cd8d-4cc0-9776-e7a51683327a",
+      "name": "Execute Workflow Trigger",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -656,
+        320
+      ],
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "sendTo": "binquraya.procurement.demo+management@gmail.com",
+        "subject": "=🎯 DECISION REQUIRED: Commercial Evaluation Complete - {{ $('Apply Commercial Scoring Model1').item.json.recommendedVendor }}",
+        "message": "=<html>\n<body style='font-family: \"Segoe UI\", Tahoma, Geneva, Verdana, sans-serif;'>\n<div style='max-width: 700px; margin: 0 auto; padding: 20px;'>\n    <div style='background: linear-gradient(135deg, #2c3e50 0%, #1a252f 100%); color: white; padding: 30px; border-radius: 10px 10px 0 0; text-align: center;'>\n        <img src='https://drive.google.com/uc?export=view&id=1eKki6KsEVObBe6xc_b1zYibDqVloE416' alt='Bin Quraya' style='max-width: 180px; margin-bottom: 20px;'>\n        <h1 style='margin: 0; letter-spacing: 1px;'>🎯 COMMERCIAL EVALUATION COMPLETE</h1>\n    </div>\n    <div style='background: white; border: 1px solid #ddd; padding: 30px; border-radius: 0 0 10px 10px;'>\n        <div style='background: #d4edda; border-left: 5px solid #28a745; padding: 20px; margin-bottom: 20px; border-radius: 5px;'>\n            <h2 style='color: #155724; margin-top: 0;'>✅ Recommendation: Award to {{ $('Apply Commercial Scoring Model1').item.json.recommendedVendor }}</h2>\n            <p style='font-size: 18px; margin: 10px 0;'><strong>Score:</strong> {{ $('Apply Commercial Scoring Model1').item.json.recommendationScore }}/100</p>\n            <p style='margin: 0;'><strong>Price:</strong> SAR {{ $('Apply Commercial Scoring Model1').item.json.recommendationPrice }}</p>\n        </div>\n        \n        <p><strong>Justification:</strong></p>\n        <p>{{ $('Apply Commercial Scoring Model1').item.json.justification }}</p>\n        \n        <div style='background: #f8f9fa; padding: 20px; border-radius: 5px; margin: 20px 0;'>\n            <h3 style='margin-top: 0; color: #2c5aa0;'>📊 Evaluation Summary</h3>\n            <ul style='list-style: none; padding: 0;'>\n                <li>✓ {{ $('Apply Commercial Scoring Model1').item.json.vendorCount }} vendors evaluated</li>\n                <li>✓ Weighted scoring model applied</li>\n                <li>✓ Risk assessment completed</li>\n                <li>✓ Decision package generated</li>\n            </ul>\n        </div>\n        \n        <p style='margin: 20px 0;'><strong>📎 Full Decision Package:</strong> Please find the detailed analysis attached or view in Google Drive.</p>\n        \n        <div style='text-align: center; margin: 30px 0;'>\n            <a href='{{ $json.webViewLink }}' style='display: inline-block; padding: 15px 40px; background: #28a745; color: white; text-decoration: none; border-radius: 5px; font-weight: bold;'>VIEW DECISION PACKAGE</a>\n        </div>\n    </div>\n    \n    <div style='background: #f8f9fa; padding: 20px; text-align: center; border-top: 3px solid #2c5aa0; margin-top: 20px;'>\n        <p style='margin: 5px 0; color: #666;'><strong>Bin Quraya Management & Trading</strong></p>\n        <p style='margin: 5px 0; color: #666;'>Dhahran, Saudi Arabia</p>\n        <div style='margin-top: 15px; padding-top: 15px; border-top: 1px solid #ddd;'>\n            <img src='https://drive.google.com/uc?export=view&id=1vdzoOdNbRHB6f0vFOaaOibfEkFGtCzzx' alt='Powered by Davon' style='max-width: 100px; opacity: 0.8;'>\n            <p style='color: #999; font-size: 12px; margin-top: 10px;'>\n                This is an automated notification from the davon Decision Intelligence Engine<br>\n                The recommendation is based on the BQ-PROC-MODEL-001 weighted scoring model\n            </p>\n        </div>\n    </div>\n</div>\n</body>\n</html>",
+        "options": {
+          "appendAttribution": false,
+          "attachmentsUi": {
+            "attachmentsBinary": [
+              {
+                "property": "document.pdf"
+              }
+            ]
+          }
+        }
+      },
+      "id": "68494f33-acfa-4e9a-843b-46f1bf5cd0c3",
+      "name": "Send Decision Package to Management",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        1616,
+        160
+      ],
+      "webhookId": "9bcc93f3-13f4-4302-bb77-ef38c299cc07",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "zxi9fBhWaVy2UkSW",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "1A4p11MoSmkqwY7af9Cq3vN9HxTfZD0hfNNa1bi5YPXU"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Sheet1"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Status": "Awaiting Decision",
+            "Commercial_Score": "={{ $json.totalScore }}",
+            "Commercial_Rank": "={{ $json.rank }}",
+            "Decision_Sent_Date": "={{ $now.format('yyyy-MM-dd HH:mm:ss') }}",
+            "Vendor_Email": "={{ $json.vendorEmail }}"
+          },
+          "matchingColumns": [
+            "Vendor_Email"
+          ],
+          "schema": [
+            {
+              "id": "RFQ_ID",
+              "displayName": "RFQ_ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Vendor_Name",
+              "displayName": "Vendor_Name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Vendor_Email",
+              "displayName": "Vendor_Email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Commercial_Score",
+              "displayName": "Commercial_Score",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "Commercial_Rank",
+              "displayName": "Commercial_Rank",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "Decision_Sent_Date",
+              "displayName": "Decision_Sent_Date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "f3a79756-09cc-4ea3-926e-08cc126f751f",
+      "name": "Update All Vendors - Awaiting Decision",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        2576,
+        160
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "PaMqLOffUaABISUn",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        2288,
+        160
+      ],
+      "id": "42435141-91d3-4043-b807-d9b22194ba4a",
+      "name": "Split Vendors for Status Update"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Generate HTML Decision Package for PDF conversion\nconst data = items[0].json;\nconst currentDate = new Date().toLocaleDateString('en-US', { \n  year: 'numeric', \n  month: 'long', \n  day: 'numeric' \n});\n\n// Create clean HTML optimized for PDF conversion\nconst decisionPackageHTML = `\n<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UTF-8\">\n  <style>\n    * { margin: 0; padding: 0; box-sizing: border-box; }\n    body {\n      font-family: Arial, Helvetica, sans-serif;\n      line-height: 1.6;\n      color: #333;\n      padding: 40px;\n    }\n    h1 { color: #2c3e50; margin-bottom: 20px; font-size: 28px; }\n    h2 { color: #34495e; margin: 20px 0 10px; font-size: 20px; }\n    .header {\n      text-align: center;\n      padding-bottom: 20px;\n      border-bottom: 3px solid #BF0D0D;\n      margin-bottom: 30px;\n    }\n    .logo {\n      max-width: 200px;\n      margin-bottom: 20px;\n    }\n    .recommendation-box {\n      background: #e8f5e9;\n      border-left: 4px solid #28a745;\n      padding: 20px;\n      margin: 20px 0;\n    }\n    .section {\n      margin: 30px 0;\n      page-break-inside: avoid;\n    }\n    table {\n      width: 100%;\n      border-collapse: collapse;\n      margin: 20px 0;\n    }\n    th {\n      background: #2c3e50;\n      color: white;\n      padding: 10px;\n      text-align: left;\n    }\n    td {\n      padding: 10px;\n      border: 1px solid #ddd;\n    }\n    .winner-row {\n      background: #e8f5e9;\n      font-weight: bold;\n    }\n    .footer {\n      margin-top: 50px;\n      padding-top: 20px;\n      border-top: 2px solid #ddd;\n      text-align: center;\n      color: #666;\n    }\n    .powered-by {\n      margin-top: 30px;\n      padding-top: 20px;\n      border-top: 1px solid #ddd;\n    }\n  </style>\n</head>\n<body>\n  <div class=\"header\">\n    <img src=\"https://drive.google.com/uc?export=view&id=1eKki6KsEVObBe6xc_b1zYibDqVloE416\" class=\"logo\" alt=\"Bin Quraya\">\n    <h1>COMMERCIAL EVALUATION DECISION PACKAGE</h1>\n    <p>Date: ${currentDate}</p>\n    <p>RFQ ID: 450-012547 | Project Eagle - Aramco Site 7</p>\n  </div>\n\n  <div class=\"recommendation-box\">\n    <h2>✓ RECOMMENDATION</h2>\n    <p style=\"font-size: 18px;\"><strong>Award to: ${data.recommendedVendor}</strong></p>\n    <p>Score: ${data.recommendationScore}/100</p>\n    <p>Price: SAR ${data.recommendationPrice.toLocaleString()}</p>\n  </div>\n\n  <div class=\"section\">\n    <h2>EXECUTIVE SUMMARY</h2>\n    <p>${data.justification}</p>\n  </div>\n\n  <div class=\"section\">\n    <h2>COMPARATIVE ANALYSIS</h2>\n    <table>\n      <thead>\n        <tr>\n          <th>Rank</th>\n          <th>Vendor</th>\n          <th>Price (SAR)</th>\n          <th>Delivery</th>\n          <th>Payment</th>\n          <th>Incoterms</th>\n          <th>Score</th>\n        </tr>\n      </thead>\n      <tbody>\n        ${data.allVendors.map(v => `\n          <tr class=\"${v.rank === 1 ? 'winner-row' : ''}\">\n            <td>#${v.rank}</td>\n            <td>${v.vendorName}</td>\n            <td>${v.price.toLocaleString()}</td>\n            <td>${v.deliveryDays} days</td>\n            <td>${v.paymentTerms}</td>\n            <td>${v.incoterms}</td>\n            <td><strong>${v.totalScore.toFixed(1)}</strong></td>\n          </tr>\n        `).join('')}\n      </tbody>\n    </table>\n  </div>\n\n  <div class=\"section\">\n    <h2>SCORING BREAKDOWN</h2>\n    <p><strong>Methodology:</strong> BQ-PROC-MODEL-001 Weighted Scoring</p>\n    <ul>\n      <li>Price Factor: 40% weight</li>\n      <li>Delivery Schedule: 30% weight</li>\n      <li>Payment Terms: 20% weight</li>\n      <li>Risk Profile: 10% weight</li>\n    </ul>\n  </div>\n\n  <div class=\"footer\">\n    <p><strong>Bin Quraya Management & Trading</strong></p>\n    <p>Dhahran, Saudi Arabia</p>\n    \n    <div class=\"powered-by\">\n      <img src=\"https://drive.google.com/uc?export=view&id=1vdzoOdNbRHB6f0vFOaaOibfEkFGtCzzx\" alt=\"Powered by Davon\" style=\"max-width: 120px;\">\n      <p>Powered by the davon Decision Intelligence Engine</p>\n      <p style=\"font-size: 12px;\">Based on BQ-PROC-MODEL-001 Weighted Scoring Model</p>\n    </div>\n  </div>\n</body>\n</html>\n`;\n\nreturn [{ \n  json: {\n    ...data,\n    htmlContent: decisionPackageHTML,\n    fileName: `Decision_Package_${new Date().toISOString().slice(0,10)}.pdf`\n  }\n}];"
+      },
+      "id": "0528d67b-9bdd-4445-ad39-48627356fe84",
+      "name": "Generate HTML for PDF",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        576,
+        192
+      ]
+    },
+    {
+      "parameters": {
+        "inputDataFieldName": "document.pdf",
+        "name": "=Decision_Package_{{ $now.format('yyyy-MM-dd') }}.pdf",
+        "driveId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "My Drive"
+        },
+        "folderId": {
+          "__rl": true,
+          "value": "1UXctphlPvfCd_1ppH4gP7c0dy4gXKuXQ",
+          "mode": "id"
+        },
+        "options": {}
+      },
+      "id": "b7972c6e-f8a7-421a-8c37-1f79c2c4a753",
+      "name": "Save PDF to Google Drive",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        1200,
+        192
+      ],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "gwMOJwl1jAV6ODsG",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "1A4p11MoSmkqwY7af9Cq3vN9HxTfZD0hfNNa1bi5YPXU"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Sheet1"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "Status",
+              "lookupValue": "Technically Approved"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "3ebeb1ed-c12b-42bb-b9c1-9641926df738",
+      "name": "Get Approved Vendors1",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -432,
+        192
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "PaMqLOffUaABISUn",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Extract Commercial Data - Simplified for demo\nconst vendorEmail = ($json.Vendor_Email || '').toLowerCase();\nconst vendorName = $json.Vendor_Name || '';\n\nlet commercialData = {};\n\nif (vendorEmail.includes('vendor.a')) {\n  commercialData = {\n    vendorName: 'Vendor A Industries',\n    vendorId: '9V-1102',\n    vendorEmail: $json.Vendor_Email,\n    documentName: 'QA-25-10-881_Vendor_A_Technical_Commercial_Offer.pdf',\n    price: 1250000,\n    currency: 'SAR',\n    originalPrice: '48,500 USD',\n    deliveryDays: 70,\n    incoterms: 'DDP',\n    paymentTerms: '30/70',\n    warranty: 24,\n    localContent: 35,\n    certification: 'ISO 9001, ISO 14001',\n    previousExperience: 'Yes',\n    technicalCompliance: 'SS_316L'\n  };\n} else if (vendorEmail.includes('vendor.b')) {\n  commercialData = {\n    vendorName: 'Vendor B Solutions',\n    vendorId: '9V-4354',\n    vendorEmail: $json.Vendor_Email,\n    documentName: 'VBS-Q-2025-0847-REV1_Vendor_B_Revised.pdf',\n    price: 1056775,\n    currency: 'SAR',\n    originalPrice: '41,000 USD',\n    deliveryDays: 84,\n    incoterms: 'CIF',\n    paymentTerms: '40/60',\n    warranty: 18,\n    localContent: 25,\n    certification: 'ISO 9001',\n    previousExperience: 'No',\n    technicalCompliance: 'SS_316L'\n  };\n} else if (vendorEmail.includes('vendor.c')) {\n  commercialData = {\n    vendorName: 'Vendor C Global',\n    vendorId: '9V-2189',\n    vendorEmail: $json.Vendor_Email,\n    documentName: 'VCG-25-4431_Vendor_C_Global_Offer.pdf',\n    price: 940525,\n    currency: 'SAR',\n    originalPrice: '36,500 USD',\n    deliveryDays: 168,\n    incoterms: 'EXW',\n    paymentTerms: '100/0',\n    warranty: 12,\n    localContent: 0,\n    certification: 'Basic ASME',\n    previousExperience: 'No',\n    technicalCompliance: 'SS_316L',\n    riskFlags: [\n      '100% Advance Payment Required',\n      'EXW Terms - Maximum Buyer Risk',\n      'No Local Content',\n      '24 Week Delivery'\n    ]\n  };\n}\n\nreturn { json: commercialData };"
+      },
+      "id": "afafb3ba-0c66-45ac-baaf-96ae5c6d1853",
+      "name": "Extract Commercial Data1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -32,
+        192
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Apply Commercial Scoring Model\nconst vendors = items.map(item => item.json);\n\n// Define scoring weights\nconst weights = {\n  price: 30,\n  delivery: 20,\n  paymentTerms: 15,\n  incoterms: 10,\n  warranty: 10,\n  localContent: 10,\n  experience: 5\n};\n\n// Score each vendor\nconst scoredVendors = vendors.map(vendor => {\n  const scores = {};\n  \n  // Price scoring (lower is better)\n  const prices = vendors.map(v => v.price);\n  const maxPrice = Math.max(...prices);\n  const minPrice = Math.min(...prices);\n  scores.price = ((maxPrice - vendor.price) / (maxPrice - minPrice)) * weights.price || 0;\n  \n  // Delivery scoring (shorter is better)\n  const deliveries = vendors.map(v => v.deliveryDays);\n  const maxDelivery = Math.max(...deliveries);\n  const minDelivery = Math.min(...deliveries);\n  scores.delivery = ((maxDelivery - vendor.deliveryDays) / (maxDelivery - minDelivery)) * weights.delivery || 0;\n  \n  // Payment terms scoring\n  const paymentScores = {\n    '30/70': weights.paymentTerms,\n    '40/60': weights.paymentTerms * 0.8,\n    '50/50': weights.paymentTerms * 0.6,\n    '100/0': weights.paymentTerms * 0\n  };\n  scores.paymentTerms = paymentScores[vendor.paymentTerms] || 0;\n  \n  // Incoterms scoring\n  const incotermScores = {\n    'DDP': weights.incoterms,\n    'CIF': weights.incoterms * 0.7,\n    'FOB': weights.incoterms * 0.5,\n    'EXW': weights.incoterms * 0\n  };\n  scores.incoterms = incotermScores[vendor.incoterms] || 0;\n  \n  // Other scores\n  scores.warranty = (vendor.warranty / 24) * weights.warranty;\n  scores.localContent = (vendor.localContent / 35) * weights.localContent;\n  scores.experience = vendor.previousExperience === 'Yes' ? weights.experience : 0;\n  \n  const totalScore = Object.values(scores).reduce((sum, score) => sum + score, 0);\n  \n  return {\n    ...vendor,\n    scores,\n    totalScore\n  };\n});\n\n// Rank vendors\nscoredVendors.sort((a, b) => b.totalScore - a.totalScore);\nscoredVendors.forEach((vendor, index) => {\n  vendor.rank = index + 1;\n});\n\nconst winner = scoredVendors[0];\nconst lowestPrice = Math.min(...vendors.map(v => v.price));\nconst savingsVsLowest = winner.price - lowestPrice;\n\nlet justification = winner.price === lowestPrice ? \n  `${winner.vendorName} offers both the lowest price and the best overall value.` :\n  `Although not the lowest price, ${winner.vendorName} provides the best overall value. The ${savingsVsLowest.toLocaleString()} SAR premium is justified by superior terms.`;\n\nlet riskAnalysis = '';\nconst vendorC = scoredVendors.find(v => v.vendorName.includes('Vendor C'));\nif (vendorC && vendorC.rank > 1) {\n  riskAnalysis = `Vendor C offers the lowest price but poses significant risks: ${vendorC.incoterms} terms, 100% advance payment, and ${vendorC.deliveryDays}-day delivery.`;\n}\n\nreturn [{\n  json: {\n    recommendedVendor: winner.vendorName,\n    vendorId: winner.vendorId,\n    score: Math.round(winner.totalScore),\n    price: winner.price,\n    originalPrice: winner.originalPrice,\n    justification,\n    riskAnalysis,\n    savingsVsLowest,\n    allVendors: scoredVendors,\n    evaluationDate: new Date().toISOString(),\n    modelUsed: 'BQ-PROC-MODEL-001 Rev2'\n  }\n}];"
+      },
+      "id": "dc85525a-3b19-4961-b253-7199a1bad5d4",
+      "name": "Apply Commercial Scoring Model1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        368,
+        192
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "conversion",
+        "htmlContent": "={{ $json.htmlContent }}",
+        "conversionOptions": {
+          "paper_size": "a4",
+          "orientation": "portrait",
+          "conversionOutput": "file"
+        }
+      },
+      "type": "@pdfgeneratorapi/n8n-nodes-pdf-generator-api.pdfGeneratorApi",
+      "typeVersion": 1,
+      "position": [
+        832,
+        192
+      ],
+      "id": "40ff401d-9b99-4c01-a973-0be03b86640e",
+      "name": "Convert HTML content to PDF",
+      "credentials": {
+        "pdfGeneratorApi": {
+          "id": "uRBu77MVvtfH6acs",
+          "name": "PDF Generator account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        1408,
+        192
+      ],
+      "id": "3848741b-02e9-4d8f-80a7-e183d5f8e7ee",
+      "name": "Merge"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get the scoring data which has all vendors\nconst scoringData = $node[\"Apply Commercial Scoring Model1\"].json;\nconst allVendors = scoringData.allVendors;\n\n// Return each vendor as a separate item for the split batch\nreturn allVendors.map(vendor => ({\n  json: {\n    vendorEmail: vendor.vendorEmail,\n    vendorName: vendor.vendorName,\n    totalScore: vendor.totalScore,\n    rank: vendor.rank\n  }\n}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2032,
+        160
+      ],
+      "id": "e9b1f484-9898-4d04-97ad-8d7cfb9224fe",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:3001/api/webhooks/status",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"event\": \"DECISION_READY\",\n  \"rfqId\": \"450-012547\",\n  \"recommendedVendor\": \"{{$json.recommendedVendor}}\",\n  \"score\": \"{{$json.score}}\",\n  \"price\": \"{{$json.price}}\",\n  \"details\": \"Decision package ready\",\n  \"timestamp\": \"{{$now.toISO()}}\",\n  \"projectId\": \"001\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1824,
+        160
+      ],
+      "id": "120dec54-d3b9-4502-9e39-da835f8c19af",
+      "name": "HTTP Request"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Manual Trigger (Testing)": {
+      "main": [
+        [
+          {
+            "node": "Get Approved Vendors1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute Workflow Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get Approved Vendors1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Decision Package to Management": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Vendors for Status Update": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Update All Vendors - Awaiting Decision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update All Vendors - Awaiting Decision": {
+      "main": [
+        [
+          {
+            "node": "Split Vendors for Status Update",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate HTML for PDF": {
+      "main": [
+        [
+          {
+            "node": "Convert HTML content to PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Approved Vendors1": {
+      "main": [
+        [
+          {
+            "node": "Extract Commercial Data1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Commercial Data1": {
+      "main": [
+        [
+          {
+            "node": "Apply Commercial Scoring Model1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Apply Commercial Scoring Model1": {
+      "main": [
+        [
+          {
+            "node": "Generate HTML for PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save PDF to Google Drive": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Convert HTML content to PDF": {
+      "main": [
+        [
+          {
+            "node": "Save PDF to Google Drive",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Send Decision Package to Management",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Split Vendors for Status Update",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "41b2b31c-beca-44cb-91b5-221b0c34daa7",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "5ff48a5b518af62534474e14d71c65115a3f49ab46ef1ddaf82c3d8f27abe8ab"
+  },
+  "id": "BbmYJVp2WLGk7gdJ",
+  "tags": []
+}

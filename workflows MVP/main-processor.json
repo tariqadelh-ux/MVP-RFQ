@@ -1,0 +1,717 @@
+{
+  "name": "Bin Quraya RFQ - Main Processor",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "26134726-5ffd-49eb-90b1-f7c01076ed80",
+      "name": "Manual Trigger - Start Demo",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -4912,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "download",
+        "fileId": {
+          "__rl": true,
+          "value": "1uLtG5JFWLYZeDck0eN3CxuCYpuTqLWbG",
+          "mode": "id"
+        },
+        "options": {}
+      },
+      "id": "18bbcc96-a3a5-4cba-8c9c-90dd6ea23799",
+      "name": "Download Project Memo",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        -4720,
+        368
+      ],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "gwMOJwl1jAV6ODsG",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Simulated AI extraction - hardcoded for demo reliability\n// In production, this would use AI to extract from the PDF\nconst extractedData = {\n  '9COM': '450-012547',\n  'description': 'High-Pressure Shell & Tube Heat Exchanger',\n  'quantity': 1,\n  'technicalSpec': 'SS_316L',\n  'projectName': 'Project Eagle',\n  'wbsCode': 'PE-A7-PRC-01'\n};\n\nreturn [{ json: extractedData }];"
+      },
+      "id": "54296125-2f94-4f62-ba84-86503a0ac6e6",
+      "name": "Extract 9COM (Simulated AI)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -4512,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "1OGSzKu47JnXgb51rpftjALOOaP_9jL-3oFev5UbmYiQ",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Sheet1",
+          "mode": "name"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "9COM_Number",
+              "lookupValue": "={{ $json['9COM'] }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "46a5e804-ec68-4597-82ba-5e4ccb561470",
+      "name": "Get AVL from 9COM Master List",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -4320,
+        368
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "PaMqLOffUaABISUn",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const avlFilename = items[0].json.AVL_Document_Name;\n\n// Map filename to file ID for demo reliability\nconst fileIdMap = {\n  'AVL-HEAT-EXCHANGERS-Rev4.pdf': '15f_sNr9BJDVltzU-RwkhLSoB_b0yECUe'\n};\n\nconst fileId = fileIdMap[avlFilename] || avlFilename;\n\nreturn [{ json: { \n  avlFilename: avlFilename,\n  fileId: fileId \n}}];"
+      },
+      "id": "a8b00d16-27ae-4109-941f-a3fea2efb01e",
+      "name": "Extract AVL Filename",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -4112,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "download",
+        "fileId": {
+          "__rl": true,
+          "value": "={{ $json.fileId }}",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "958a13ab-82b7-4306-8a0b-55bb8a81adf7",
+      "name": "Download AVL PDF",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        -3920,
+        368
+      ],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "gwMOJwl1jAV6ODsG",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Simulated extraction from AVL PDF\n// Hardcoded for demo reliability\nconst vendors = [\n  {\n    vendorId: '9V-1102',\n    vendorName: 'Vendor A Industries',\n    email: 'vendor.a.demo@gmail.com'\n  },\n  {\n    vendorId: '9V-4354',\n    vendorName: 'Vendor B Solutions',\n    email: 'vendor.b.demo@gmail.com'\n  },\n  {\n    vendorId: '9V-2189',\n    vendorName: 'Vendor C Global',\n    email: 'vendor.c.demo@gmail.com'\n  }\n];\n\nreturn vendors.map(vendor => ({ json: vendor }));"
+      },
+      "id": "902d703a-0a7c-43f0-a653-737c02721c6e",
+      "name": "Extract Vendor Emails (Simulated AI)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -3712,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.email }}",
+        "subject": "=RFQ ID: BQ-{{ $now.format('yyyyMMddHHmmss') }} - Project Jubail - Heat Exchanger",
+        "message": "=<html>\n<head>\n    <style>\n        body { \n            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; \n            line-height: 1.6; \n            color: #333; \n            margin: 0; \n            padding: 0; \n            background-color: #f4f4f4;\n        }\n        .email-container {\n            max-width: 700px;\n            margin: 20px auto;\n            background: white;\n            border-radius: 8px;\n            overflow: hidden;\n            box-shadow: 0 2px 10px rgba(0,0,0,0.1);\n        }\n        .header {\n            background: linear-gradient(135deg, #2c3e50 0%, #1a252f 100%);\n            padding: 35px 30px;\n            text-align: center;\n            border-bottom: 4px solid #BF0D0D;\n        }\n        .logo {\n            max-width: 200px;\n            height: auto;\n            margin-bottom: 20px;\n            filter: drop-shadow(0 2px 4px rgba(0,0,0,0.2));\n        }\n        .header h1 {\n            color: #ffffff;\n            margin: 0;\n            font-size: 26px;\n            font-weight: 400;\n            letter-spacing: 2px;\n            text-transform: uppercase;\n        }\n        .content {\n            padding: 40px;\n        }\n        .info-box {\n            background: #f8f9fa;\n            border-left: 4px solid #2c5aa0;\n            padding: 20px;\n            margin: 20px 0;\n            border-radius: 4px;\n        }\n        .requirements {\n            background: #fff9e6;\n            border: 1px solid #ffd700;\n            padding: 20px;\n            border-radius: 6px;\n            margin: 20px 0;\n        }\n        pre {\n            background: #f5f5f5;\n            padding: 15px;\n            border-radius: 4px;\n            font-family: 'Courier New', monospace;\n        }\n        .footer {\n            background: #f8f9fa;\n            padding: 25px;\n            text-align: center;\n            border-top: 3px solid #2c5aa0;\n        }\n        .footer p {\n            margin: 5px 0;\n            color: #666;\n            font-size: 14px;\n        }\n        .powered-by {\n            margin-top: 20px;\n            padding-top: 15px;\n            border-top: 1px solid #ddd;\n        }\n        .powered-by img {\n            max-width: 120px;\n            height: auto;\n            opacity: 0.8;\n        }\n    </style>\n</head>\n<body>\n    <div class='email-container'>\n        <div class='header'>\n            <img src='https://drive.google.com/uc?export=view&id=1eKki6KsEVObBe6xc_b1zYibDqVloE416' alt='Bin Quraya' class='logo'>\n            <h1>REQUEST FOR QUOTATION</h1>\n        </div>\n        \n        <div class='content'>\n            <p>Dear {{ $json.vendorName }},</p>\n            \n            <p>Bin Quraya invites you to submit a quotation for the following requirement:</p>\n            \n            <div class='info-box'>\n                <h3 style='color: #2c5aa0; margin-top: 0;'>Item Details:</h3>\n                <ul style='list-style: none; padding: 0;'>\n                    <li>✓ <strong>Description:</strong> High-Pressure Shell & Tube Heat Exchanger</li>\n                    <li>✓ <strong>9COM:</strong> 450-012547</li>\n                    <li>✓ <strong>Quantity:</strong> 1 Unit</li>\n                    <li>✓ <strong>Technical Requirement:</strong> All wetted parts must be SS 316/316L</li>\n                </ul>\n            </div>\n            \n            <div class='requirements'>\n                <h3 style='color: #856404; margin-top: 0;'>Submission Requirements:</h3>\n                <ul>\n                    <li>Technical specifications confirming material grade</li>\n                    <li>Pricing (DDP basis preferred)</li>\n                    <li>Delivery timeline</li>\n                    <li>Payment terms</li>\n                </ul>\n            </div>\n            \n            <p><strong>Response Format:</strong></p>\n            <p>Please include the following tags in your email response:</p>\n            <pre>\n[START_TECHNICAL_DATA]\nMATERIAL_GRADE: [Your offered grade]\n[END_TECHNICAL_DATA]\n            </pre>\n            \n            <p><strong>⏰ Deadline:</strong> Please submit your quotation within 7 days.</p>\n            \n            <p>Best regards,<br>\n            <strong>Bin Quraya Procurement Team</strong></p>\n        </div>\n        \n        <div class='footer'>\n            <p><strong>Bin Quraya Management & Trading</strong></p>\n            <p>Dhahran, Saudi Arabia</p>\n            <p>Email: binquraya.procurement.demo@gmail.com</p>\n            \n            <div class='powered-by'>\n                <img src='https://drive.google.com/uc?export=view&id=1vdzoOdNbRHB6f0vFOaaOibfEkFGtCzzx' alt='Powered by Davon'>\n                <p style='color: #999; font-size: 12px; margin-top: 10px;'>\n                    Powered by the davon Decision Intelligence Engine\n                </p>\n            </div>\n        </div>\n    </div>\n</body>\n</html>",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "fde25b6f-4c39-4197-9d3c-91986be3c2a8",
+      "name": "Send RFQ to Vendors",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        -3520,
+        368
+      ],
+      "webhookId": "311029aa-a055-4615-964c-27a2ed5b9cdd",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "zxi9fBhWaVy2UkSW",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "1A4p11MoSmkqwY7af9Cq3vN9HxTfZD0hfNNa1bi5YPXU",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Sheet1",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "RFQ_ID": "=BQ-{{ $now.format('yyyyMMddHHmmss') }}",
+            "Vendor_Name": "={{ $('Extract Vendor Emails (Simulated AI)').item.json.vendorName }}",
+            "Vendor_Email": "={{ $('Extract Vendor Emails (Simulated AI)').item.json.email }}",
+            "Status": "Sent",
+            "Date_Sent": "={{ $now.format('yyyy-MM-dd HH:mm:ss') }}",
+            "9COM Project": "450-012547 - Project Davon"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "RFQ_ID",
+              "displayName": "RFQ_ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Vendor_Name",
+              "displayName": "Vendor_Name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Vendor_Email",
+              "displayName": "Vendor_Email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Date_Sent",
+              "displayName": "Date_Sent",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Date_Received",
+              "displayName": "Date_Received",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "TBC_Sent_Date",
+              "displayName": "TBC_Sent_Date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Technical_Compliance",
+              "displayName": "Technical_Compliance",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Material_Grade",
+              "displayName": "Material_Grade",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Date_Approved",
+              "displayName": "Date_Approved",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Attachment_Link",
+              "displayName": "Attachment_Link",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "9COM Project",
+              "displayName": "9COM Project",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Commercial_Score",
+              "displayName": "Commercial_Score",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Commercial_Rank",
+              "displayName": "Commercial_Rank",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Decision_Sent_Date",
+              "displayName": "Decision_Sent_Date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "e744055e-8039-4aa5-b56e-b8d5bd8d09a9",
+      "name": "Update RFQ Tracker - Sent",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -3104,
+        368
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "PaMqLOffUaABISUn",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "amount": 1,
+        "unit": "minutes"
+      },
+      "id": "cd3dc397-1943-4772-91dd-0beb4179bc3c",
+      "name": "Wait for Vendor Responses",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        -2912,
+        368
+      ],
+      "webhookId": "ee5ae636-b95b-4675-b704-e48bbdc54f16"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "1A4p11MoSmkqwY7af9Cq3vN9HxTfZD0hfNNa1bi5YPXU",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Sheet1",
+          "mode": "name"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "Status",
+              "lookupValue": "Sent"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "7d23d85f-7e32-4b3b-b8a2-8656b5fe9e7f",
+      "name": "Get Non-Responsive Vendors",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -2496,
+        368
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "PaMqLOffUaABISUn",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $items.length }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              },
+              "id": "cfbff16e-54e4-47f6-8eb6-d86dcb6006fe"
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "6d1fe0d6-9ce0-49c2-a018-73928c54ab40",
+      "name": "Check if Follow-up Needed",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -2288,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Get Non-Responsive Vendors').item.json.Vendor_Email }}",
+        "subject": "=REMINDER: RFQ {{ $json.RFQ_ID }} - Response Required",
+        "message": "=<html><body>\n<p>Dear {{ $json.Vendor_Name }},</p>\n<p>This is a friendly reminder regarding our RFQ for the High-Pressure Heat Exchanger.</p>\n<p>We would appreciate your response at your earliest convenience.</p>\n<p>Best regards,<br>Bin Quraya Procurement Team</p>\n</body></html>",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "6d22b5a8-f017-4a62-8339-41d603e6e0f3",
+      "name": "Send Follow-up Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        -1680,
+        272
+      ],
+      "webhookId": "bec4f87d-fe08-40a8-b029-83f3619597b3",
+      "executeOnce": false,
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "zxi9fBhWaVy2UkSW",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -2080,
+        272
+      ],
+      "id": "0941b1fc-f631-4156-868e-96f72f250919",
+      "name": "Loop Over Items"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Consolidate to single trigger\n   return [{ json: { proceed: true } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2704,
+        368
+      ],
+      "id": "79f5c60a-7e79-4bf1-ac4e-cf711ed238c3",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:3001/api/webhooks/status",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n     \"event\": \"RFQ_SENT\",\n     \"rfqId\": \"450-012547\",\n     \"vendors\": [\"Vendor A Industries\", \"Vendor B Solutions\", \"Vendor C Global\"],\n     \"details\": \"RFQ sent to 3 vendors\",\n     \"timestamp\": \"{{$now.toISO()}}\",\n     \"projectId\": \"001\"\n   }",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -3312,
+        368
+      ],
+      "id": "850b6df9-e2ba-4fd0-ad3b-342b4cec4610",
+      "name": "HTTP Request"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Manual Trigger - Start Demo": {
+      "main": [
+        [
+          {
+            "node": "Download Project Memo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Project Memo": {
+      "main": [
+        [
+          {
+            "node": "Extract 9COM (Simulated AI)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract 9COM (Simulated AI)": {
+      "main": [
+        [
+          {
+            "node": "Get AVL from 9COM Master List",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get AVL from 9COM Master List": {
+      "main": [
+        [
+          {
+            "node": "Extract AVL Filename",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract AVL Filename": {
+      "main": [
+        [
+          {
+            "node": "Download AVL PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download AVL PDF": {
+      "main": [
+        [
+          {
+            "node": "Extract Vendor Emails (Simulated AI)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Vendor Emails (Simulated AI)": {
+      "main": [
+        [
+          {
+            "node": "Send RFQ to Vendors",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send RFQ to Vendors": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update RFQ Tracker - Sent": {
+      "main": [
+        [
+          {
+            "node": "Wait for Vendor Responses",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait for Vendor Responses": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Non-Responsive Vendors": {
+      "main": [
+        [
+          {
+            "node": "Check if Follow-up Needed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check if Follow-up Needed": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Follow-up Email": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Send Follow-up Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Get Non-Responsive Vendors",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Update RFQ Tracker - Sent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "381f4b4f-abce-4ce7-9628-60a501cfa4a9",
+  "meta": {
+    "instanceId": "5ff48a5b518af62534474e14d71c65115a3f49ab46ef1ddaf82c3d8f27abe8ab"
+  },
+  "id": "Qm4cnenr5VgrZbl2",
+  "tags": []
+}

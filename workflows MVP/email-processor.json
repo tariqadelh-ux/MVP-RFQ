@@ -1,0 +1,973 @@
+{
+  "name": "bin_quraya_email_processor",
+  "nodes": [
+    {
+      "parameters": {
+        "jsCode": "// Extract vendor info from email - Gmail Trigger structure\nconst fromValue = items[0].json.from || {};\nconst fromEmail = fromValue.value ? fromValue.value[0].address : (typeof fromValue === 'string' ? fromValue : '');\nconst subject = items[0].json.subject || '';\n\nlet vendorName = '';\nlet vendorFolder = '';\n\n// Vendor identification logic\nif (fromEmail.includes('vendor.a')) {\n  vendorName = 'Vendor A Industries';\n  vendorFolder = 'Vendor_A';\n} else if (fromEmail.includes('vendor.b')) {\n  vendorName = 'Vendor B Solutions';\n  vendorFolder = 'Vendor_B';\n} else if (fromEmail.includes('vendor.c')) {\n  vendorName = 'Vendor C Global';\n  vendorFolder = 'Vendor_C';\n} else if (subject.includes('Vendor A')) {\n  vendorName = 'Vendor A Industries';\n  vendorFolder = 'Vendor_A';\n} else if (subject.includes('Vendor B')) {\n  vendorName = 'Vendor B Solutions';\n  vendorFolder = 'Vendor_B';\n} else {\n  vendorName = 'Test Vendor';\n  vendorFolder = 'Vendor_A';\n}\n\n// Create base output\nconst output = {\n  json: {\n    vendorName,\n    vendorFolder,\n    vendorEmail: fromEmail,\n    subject: subject,\n    emailBody: items[0].json.text || items[0].json.snippet || '',\n    messageId: items[0].json.id,\n    hasAttachment: false\n  }\n};\n\n// Check for binary attachments (Gmail format)\nif (items[0].binary && Object.keys(items[0].binary).length > 0) {\n  // Gmail attachments are in binary object\n  const binaryKeys = Object.keys(items[0].binary);\n  const firstAttachmentKey = binaryKeys[0];\n  \n  output.binary = {\n    attachmentData: items[0].binary[firstAttachmentKey]\n  };\n  output.json.hasAttachment = true;\n  output.json.attachmentName = items[0].binary[firstAttachmentKey].fileName || 'attachment.pdf';\n}\n\nreturn [output];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        208,
+        0
+      ],
+      "id": "f99499f9-d54a-4d38-8a2e-a2aed03ac337",
+      "name": "Process Email Data"
+    },
+    {
+      "parameters": {
+        "inputDataFieldName": "attachmentData",
+        "name": "={{ $json.attachmentName }}",
+        "driveId": {
+          "__rl": true,
+          "value": "My Drive",
+          "mode": "list",
+          "cachedResultName": "My Drive",
+          "cachedResultUrl": "https://drive.google.com/drive/my-drive"
+        },
+        "folderId": {
+          "__rl": true,
+          "value": "={{ $json.parentFolderId }}",
+          "mode": "id"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        624,
+        -160
+      ],
+      "id": "a9314d51-e4ac-4909-8df3-78a079c6455e",
+      "name": "Upload Attachment to Drive",
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "gwMOJwl1jAV6ODsG",
+          "name": "Google Drive account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get vendor email from previous node\nconst vendorEmail = items[0].json.vendorEmail;\nlet folderId = '';\n\n// Your actual Google Drive folder IDs\nconst folderMapping = {\n  'vendor.a': '1K-7cqHLAw3Pehy5xFEaKxbh_62YI3vsv',\n  'vendor.b': '12VsV_s2g-p2DjDav_OtXG9KkbFlaIsWq',\n  'vendor.c': '1OUMdZtTBryERcg2_3d3fbxeN8ya8rb-c'\n};\n\n// Map vendor to folder\nif (vendorEmail.includes('vendor.a')) {\n  folderId = folderMapping['vendor.a'];\n} else if (vendorEmail.includes('vendor.b')) {\n  folderId = folderMapping['vendor.b'];\n} else if (vendorEmail.includes('vendor.c')) {\n  folderId = folderMapping['vendor.c'];\n}\n\n// Create output with both JSON and binary\nconst output = {\n  json: {\n    ...items[0].json,\n    parentFolderId: folderId\n  }\n};\n\n// IMPORTANT: Pass through binary data if it exists\nif (items[0].binary) {\n  output.binary = items[0].binary;\n}\n\nreturn [output];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        416,
+        0
+      ],
+      "id": "2ff9346e-0396-41bd-b97e-25a952023d7e",
+      "name": "Map Vendor to Folder ID"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "1A4p11MoSmkqwY7af9Cq3vN9HxTfZD0hfNNa1bi5YPXU",
+          "mode": "list",
+          "cachedResultName": "Master_RFQ_Tracker",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1A4p11MoSmkqwY7af9Cq3vN9HxTfZD0hfNNa1bi5YPXU/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1A4p11MoSmkqwY7af9Cq3vN9HxTfZD0hfNNa1bi5YPXU/edit#gid=0"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Status": "In Technical Review",
+            "Date_Received": "={{ $now.format('yyyy-MM-dd HH:mm:ss') }}",
+            "Attachment_Link": "=",
+            "Vendor_Email": "={{ $('Process Email Data').item.json.vendorEmail }}"
+          },
+          "matchingColumns": [
+            "Vendor_Email"
+          ],
+          "schema": [
+            {
+              "id": "RFQ_ID",
+              "displayName": "RFQ_ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Vendor_Name",
+              "displayName": "Vendor_Name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Vendor_Email",
+              "displayName": "Vendor_Email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Date_Sent",
+              "displayName": "Date_Sent",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Date_Received",
+              "displayName": "Date_Received",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Technical_Compliance",
+              "displayName": "Technical_Compliance",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Material_Grade",
+              "displayName": "Material_Grade",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Date_Approved",
+              "displayName": "Date_Approved",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Attachment_Link",
+              "displayName": "Attachment_Link",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "9COM Project",
+              "displayName": "9COM Project",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "readOnly": true,
+              "removed": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        832,
+        0
+      ],
+      "id": "b3650657-ca72-4bf0-a1e5-825ed60e598e",
+      "name": "Update Tracker - In Review",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "PaMqLOffUaABISUn",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract technical data from email body\n// Get data from the Process Email Data node\nconst processEmailData = $('Process Email Data').first().json;\nconst emailBody = processEmailData.emailBody || '';\nconst vendorEmail = processEmailData.vendorEmail || '';\nconst vendorName = processEmailData.vendorName || '';\n\n// Extract material grade from tagged section\nlet materialGrade = 'SS_316L'; // Default\nlet extractedData = {};\n\n// Try to extract from tags\nconst startTag = '[START_TECHNICAL_DATA]';\nconst endTag = '[END_TECHNICAL_DATA]';\nconst startIndex = emailBody.indexOf(startTag);\nconst endIndex = emailBody.indexOf(endTag);\n\nif (startIndex !== -1 && endIndex !== -1) {\n  const technicalSection = emailBody.substring(startIndex + startTag.length, endIndex);\n  const materialMatch = technicalSection.match(/MATERIAL_GRADE:\\s*([^\\n\\r]+)/i);\n  if (materialMatch) {\n    materialGrade = materialMatch[1].trim();\n  }\n} else {\n  // Fallback: simulate based on vendor for demo\n  if (vendorEmail.includes('vendor.b')) {\n    materialGrade = 'SS_304'; // Vendor B is non-compliant\n  }\n}\n\n// Check compliance\nconst isCompliant = materialGrade.includes('316L') || materialGrade.includes('316/316L');\n\nextractedData = {\n  vendorEmail: vendorEmail,\n  vendorName: vendorName,\n  materialGrade: materialGrade,\n  isCompliant: isCompliant,\n  extractionMethod: startIndex !== -1 ? 'Tagged' : 'Simulated',\n  requiresTBC: !isCompliant\n};\n\nreturn [{ json: extractedData }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1248,
+        0
+      ],
+      "id": "b10cc685-cedc-4b06-8ef5-4b8716449311",
+      "name": "Extract Technical Data"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.isCompliant }}",
+                    "rightValue": "true",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true",
+                      "singleValue": true
+                    },
+                    "id": "eb1a6237-c752-4699-9de8-8fa424f145bd"
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "546dd233-96d6-40bd-a003-491ceec32122",
+                    "leftValue": "={{ $json.isCompliant }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "false",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.3,
+      "position": [
+        1456,
+        0
+      ],
+      "id": "6a7213f8-a780-4636-8734-16c8c8665c7b",
+      "name": "Check Technical Compliance"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "1A4p11MoSmkqwY7af9Cq3vN9HxTfZD0hfNNa1bi5YPXU",
+          "mode": "list",
+          "cachedResultName": "Master_RFQ_Tracker",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1A4p11MoSmkqwY7af9Cq3vN9HxTfZD0hfNNa1bi5YPXU/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1A4p11MoSmkqwY7af9Cq3vN9HxTfZD0hfNNa1bi5YPXU/edit#gid=0"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Status": "Technically Approved",
+            "Technical_Compliance": "COMPLIANT",
+            "Material_Grade": "={{ $json.materialGrade }}",
+            "Date_Approved": "={{ $now.format('yyyy-MM-dd HH:mm:ss') }}",
+            "Vendor_Email": "={{ $('Extract Technical Data').item.json.vendorEmail }}"
+          },
+          "matchingColumns": [
+            "Vendor_Email"
+          ],
+          "schema": [
+            {
+              "id": "RFQ_ID",
+              "displayName": "RFQ_ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Vendor_Name",
+              "displayName": "Vendor_Name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Vendor_Email",
+              "displayName": "Vendor_Email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Date_Sent",
+              "displayName": "Date_Sent",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Date_Received",
+              "displayName": "Date_Received",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Technical_Compliance",
+              "displayName": "Technical_Compliance",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Material_Grade",
+              "displayName": "Material_Grade",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Date_Approved",
+              "displayName": "Date_Approved",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Attachment_Link",
+              "displayName": "Attachment_Link",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "9COM Project",
+              "displayName": "9COM Project",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "readOnly": true,
+              "removed": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1664,
+        -96
+      ],
+      "id": "2062dad5-3e56-4d95-af3c-632acf253de6",
+      "name": "Update Tracker - Technically Approved",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "PaMqLOffUaABISUn",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.vendorEmail }}",
+        "subject": "⚠️ Technical Bid Clarification Required - RFQ Project Eagle",
+        "message": "=<html>\n<head>\n    <style>\n        body { \n            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; \n            line-height: 1.6; \n            color: #333; \n            margin: 0; \n            padding: 0; \n            background-color: #f4f4f4;\n        }\n        .email-container {\n            max-width: 700px;\n            margin: 20px auto;\n            background: white;\n            border-radius: 8px;\n            overflow: hidden;\n            box-shadow: 0 2px 10px rgba(0,0,0,0.1);\n        }\n        .header {\n            background: linear-gradient(135deg, #2c3e50 0%, #1a252f 100%);\n            padding: 35px 30px;\n            text-align: center;\n            border-bottom: 4px solid #BF0D0D;\n        }\n        .logo {\n            max-width: 200px;\n            height: auto;\n            margin-bottom: 20px;\n            filter: drop-shadow(0 2px 4px rgba(0,0,0,0.2));\n        }\n        .header h1 {\n            color: #ffffff;\n            margin: 0;\n            font-size: 26px;\n            font-weight: 400;\n            letter-spacing: 2px;\n            text-transform: uppercase;\n        }\n        .alert {\n            background: #fff3cd;\n            border-left: 4px solid #ffc107;\n            padding: 15px;\n            margin: 20px 0;\n        }\n        .alert h3 {\n            color: #856404;\n            margin-top: 0;\n        }\n        .issue-box {\n            background: #f8f9fa;\n            padding: 20px;\n            border-radius: 8px;\n            margin: 20px 0;\n        }\n        .highlight-red {\n            color: #dc3545;\n            font-weight: bold;\n        }\n        .highlight-green {\n            color: #28a745;\n            font-weight: bold;\n        }\n        .content {\n            padding: 40px;\n        }\n        .footer {\n            background: #f8f9fa;\n            padding: 25px;\n            text-align: center;\n            border-top: 3px solid #2c5aa0;\n        }\n        .footer p {\n            margin: 5px 0;\n            color: #666;\n            font-size: 14px;\n        }\n        .powered-by {\n            margin-top: 20px;\n            padding-top: 15px;\n            border-top: 1px solid #ddd;\n        }\n        .powered-by img {\n            max-width: 120px;\n            height: auto;\n            opacity: 0.8;\n        }\n        pre {\n            background: #f5f5f5;\n            padding: 15px;\n            border-radius: 4px;\n            font-family: 'Courier New', monospace;\n        }\n    </style>\n</head>\n<body>\n    <div class='email-container'>\n        <div class='header'>\n            <img src='https://drive.google.com/uc?export=view&id=1eKki6KsEVObBe6xc_b1zYibDqVloE416' alt='Bin Quraya' class='logo'>\n            <h1>TECHNICAL BID CLARIFICATION</h1>\n        </div>\n        \n        <div class='content'>\n            <div class='alert'>\n                <h3>⚠️ Technical Clarification Required</h3>\n            </div>\n            \n            <p>Dear {{ $json.vendorName }},</p>\n            \n            <p>Thank you for your quotation for the High-Pressure Heat Exchanger (9COM: 450-012547).</p>\n            \n            <p>However, we have identified a <strong>critical technical non-compliance</strong> that must be addressed:</p>\n            \n            <div class='issue-box'>\n                <p><strong>Issue Identified:</strong></p>\n                <p>Your offer specifies <span class='highlight-red'>{{ $json.materialGrade }}</span> material grade for the wetted parts.</p>\n                \n                <p><strong>Mandatory Requirement:</strong></p>\n                <p>As per Aramco standard SAES-A-301, all wetted parts (tubes, tubesheet, channel) MUST be fabricated from <span class='highlight-green'>Stainless Steel Grade 316/316L (UNS S31603)</span>.</p>\n                \n                <p>This is a <strong>non-negotiable requirement</strong> due to the high chloride content of the process fluid.</p>\n            </div>\n            \n            <p><strong>Action Required:</strong></p>\n            <ol>\n                <li>Please revise your technical offer to comply with the SS 316/316L requirement</li>\n                <li>Confirm the material change in your revised quotation</li>\n                <li>Update pricing if necessary due to material change</li>\n                <li>Resubmit your complete offer with the correct technical specifications</li>\n            </ol>\n            \n            <p><strong>Response Format:</strong></p>\n            <p>Please ensure your revised offer includes:</p>\n            <pre>\n[START_TECHNICAL_DATA]\nMATERIAL_GRADE: SS_316L\n[END_TECHNICAL_DATA]\n            </pre>\n            \n            <p><strong>⏰ Deadline:</strong> Please submit your revised offer within 48 hours.</p>\n            \n            <p>If you have any technical queries, please contact our technical team immediately.</p>\n            \n            <p>Best regards,<br>\n            <strong>Technical Review Team</strong><br>\n            Bin Quraya Procurement Department</p>\n        </div>\n        \n        <div class='footer'>\n            <p><strong>Bin Quraya Management & Trading</strong></p>\n            <p>Dhahran, Saudi Arabia</p>\n            <p>Email: binquraya.procurement.demo@gmail.com</p>\n            \n            <div class='powered-by'>\n                <img src='https://drive.google.com/uc?export=view&id=1vdzoOdNbRHB6f0vFOaaOibfEkFGtCzzx' alt='Powered by Davon'>\n                <p style='color: #999; font-size: 12px; margin-top: 10px;'>\n                    Powered by the davon Decision Intelligence Engine\n                </p>\n            </div>\n        </div>\n    </div>\n</body>\n</html>",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        1664,
+        96
+      ],
+      "id": "b747a77b-16d0-4cce-9bab-2601f2827019",
+      "name": "Send Technical Bid Clarification",
+      "webhookId": "99d34711-12ec-4767-9072-4680791f5ea3",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "zxi9fBhWaVy2UkSW",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "1A4p11MoSmkqwY7af9Cq3vN9HxTfZD0hfNNa1bi5YPXU",
+          "mode": "list",
+          "cachedResultName": "Master_RFQ_Tracker",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1A4p11MoSmkqwY7af9Cq3vN9HxTfZD0hfNNa1bi5YPXU/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1A4p11MoSmkqwY7af9Cq3vN9HxTfZD0hfNNa1bi5YPXU/edit#gid=0"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Vendor_Email": "={{ $('Extract Technical Data').item.json.vendorEmail }}",
+            "Status": "TBC Sent",
+            "Technical_Compliance": "NON-COMPLIANT",
+            "Material_Grade": "={{ $('Extract Technical Data').item.json.materialGrade }}",
+            "TBC_Sent_Date": "={{ $now.format('yyyy-MM-dd HH:mm:ss') }}"
+          },
+          "matchingColumns": [
+            "Vendor_Email"
+          ],
+          "schema": [
+            {
+              "id": "RFQ_ID",
+              "displayName": "RFQ_ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Vendor_Name",
+              "displayName": "Vendor_Name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Vendor_Email",
+              "displayName": "Vendor_Email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Date_Sent",
+              "displayName": "Date_Sent",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Date_Received",
+              "displayName": "Date_Received",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "TBC_Sent_Date",
+              "displayName": "TBC_Sent_Date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Technical_Compliance",
+              "displayName": "Technical_Compliance",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Material_Grade",
+              "displayName": "Material_Grade",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Date_Approved",
+              "displayName": "Date_Approved",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Attachment_Link",
+              "displayName": "Attachment_Link",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "9COM Project",
+              "displayName": "9COM Project",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "readOnly": true,
+              "removed": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        2080,
+        96
+      ],
+      "id": "b044cadb-d4cf-447f-9215-503c5cf287c8",
+      "name": "Update Tracker - TBC Sent",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "PaMqLOffUaABISUn",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Generate Technical Approval Memo\nconst vendorName = $json.vendorName;\nconst materialGrade = $json.materialGrade;\nconst currentDate = new Date().toLocaleDateString('en-US', { \n  year: 'numeric', \n  month: 'long', \n  day: 'numeric' \n});\n\nconst memoContent = `\n====================================\nINTERNAL MEMORANDUM - CONFIDENTIAL\n====================================\n\nTo: Commercial Evaluation Team\nFrom: Technical Review Team\nDate: ${currentDate}\nRe: Technical Approval - ${vendorName}\n\n------------------------------------\nPROJECT DETAILS\n------------------------------------\nProject: Project Eagle - Aramco Site 7 Expansion\nWBS Code: PE-A7-PRC-01\n9COM: 450-012547\nItem: High-Pressure Shell & Tube Heat Exchanger\n\n------------------------------------\nTECHNICAL EVALUATION RESULTS\n------------------------------------\nVendor: ${vendorName}\nMaterial Specification Offered: ${materialGrade}\nCompliance with SAES-A-301: ✓ APPROVED\n\nTechnical Review Summary:\nThe vendor's technical offer has been thoroughly reviewed and found to be fully compliant with all mandatory requirements as specified in:\n- Aramco Standard SAES-A-301\n- BQ-PROC-STD-001 Technical Compliance Matrix Rev2\n\nKey Compliance Points Verified:\n✓ Material Grade: SS 316/316L for all wetted parts\n✓ Design Standards: ASME Section VIII Div. 1\n✓ Testing Requirements: Hydrostatic test at 1.5x design pressure\n✓ Documentation: Material certificates and test reports included\n\n------------------------------------\nRECOMMENDATION\n------------------------------------\nThis vendor is CLEARED for commercial evaluation.\n\n------------------------------------\nAPPROVAL\n------------------------------------\nReviewed and Approved by:\nTechnical Review Team\nBin Quraya Procurement Department\n\n[Electronic Signature]\n====================================\n`;\n\nreturn [{ \n  json: { \n    memoContent,\n    vendorName,\n    approvalDate: currentDate,\n    status: 'Technically Approved'\n  } \n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2080,
+        -96
+      ],
+      "id": "70df36e0-04ec-4c9b-9300-68cec028bedd",
+      "name": "Generate Technical Approval Memo"
+    },
+    {
+      "parameters": {
+        "sendTo": "binquraya.procurement.demo+management@gmail.com",
+        "subject": "=✅ Technical Approval - {{ $json.vendorName }} - Project Davon",
+        "emailType": "text",
+        "message": "={{ $json.memoContent }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        2288,
+        -96
+      ],
+      "id": "0b52145f-42ab-43c8-bc0e-9dea3571b516",
+      "name": "Notify Management of Approval",
+      "webhookId": "b353f052-f9c3-4715-8a00-e1c5d4aefbdd",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "zxi9fBhWaVy2UkSW",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "simple": false,
+        "filters": {
+          "q": "from:(vendor.a.demo@gmail.com) OR from:(vendor.b.demo@gmail.com) OR from:(vendor.c.demo@gmail.com) OR from:(tariqadelh@gmail.com)"
+        },
+        "options": {
+          "downloadAttachments": true
+        }
+      },
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        -384,
+        144
+      ],
+      "id": "5b1de0d2-3349-412d-864e-d12c80b35242",
+      "name": "Gmail Trigger",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "zxi9fBhWaVy2UkSW",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:3001/api/webhooks/status",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"event\": \"VENDOR_RESPONDED\",\n  \"rfqId\": \"450-012547\",\n  \"vendor\": \"{{$json.vendorName}}\",\n  \"status\": \"In Technical Review\",\n  \"timestamp\": \"{{$now.toISO()}}\",\n  \"projectId\": \"001\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1040,
+        0
+      ],
+      "id": "0303bd53-875f-4457-afda-40f995482eb6",
+      "name": "HTTP Request"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:3001/api/webhooks/status",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"event\": \"VENDOR_APPROVED\",\n  \"rfqId\": \"450-012547\",\n  \"vendor\": \"{{$json.vendorName}}\",\n  \"status\": \"Technically Approved\",\n  \"materialGrade\": \"{{$json.materialGrade}}\",\n  \"timestamp\": \"{{$now.toISO()}}\",\n  \"projectId\": \"001\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1872,
+        -96
+      ],
+      "id": "337f52d8-6d18-49f8-9ef2-76cc9beb759e",
+      "name": "HTTP Request1"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:3001/api/webhooks/status",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"event\": \"TBC_ISSUED\",\n  \"rfqId\": \"450-012547\",\n  \"vendor\": \"{{$json.vendorName}}\",\n  \"issue\": \"Material grade {{$json.materialGrade}} non-compliant\",\n  \"timestamp\": \"{{$now.toISO()}}\",\n  \"projectId\": \"001\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1872,
+        96
+      ],
+      "id": "9e8af588-5611-4867-8132-3b9617a65b96",
+      "name": "HTTP Request2"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Process Email Data": {
+      "main": [
+        [
+          {
+            "node": "Map Vendor to Folder ID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Map Vendor to Folder ID": {
+      "main": [
+        [
+          {
+            "node": "Upload Attachment to Drive",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload Attachment to Drive": {
+      "main": [
+        [
+          {
+            "node": "Update Tracker - In Review",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Tracker - In Review": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Technical Data": {
+      "main": [
+        [
+          {
+            "node": "Check Technical Compliance",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Technical Compliance": {
+      "main": [
+        [
+          {
+            "node": "Update Tracker - Technically Approved",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Technical Bid Clarification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Technical Bid Clarification": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Tracker - Technically Approved": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Technical Approval Memo": {
+      "main": [
+        [
+          {
+            "node": "Notify Management of Approval",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gmail Trigger": {
+      "main": [
+        [
+          {
+            "node": "Process Email Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Extract Technical Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request1": {
+      "main": [
+        [
+          {
+            "node": "Generate Technical Approval Memo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request2": {
+      "main": [
+        [
+          {
+            "node": "Update Tracker - TBC Sent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "6ef5da2c-1fd8-468c-828d-9ec38e347b3a",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "5ff48a5b518af62534474e14d71c65115a3f49ab46ef1ddaf82c3d8f27abe8ab"
+  },
+  "id": "4RkZPmGtcJcnxuzL",
+  "tags": []
+}

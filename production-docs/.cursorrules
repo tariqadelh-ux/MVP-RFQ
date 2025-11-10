@@ -1,0 +1,130 @@
+# Bin Quraya RFQ Automation - Cursor Rules
+
+## Project Overview
+This is a production-ready RFQ automation system using n8n workflows, OpenAI for intelligent extraction, and Supabase for data storage. The system must run 24/7 without manual intervention.
+
+## Critical Requirements
+- **NO HARD-CODED DATA**: Everything must be AI-extracted
+- **PRODUCTION READY**: 24/7 operation with error handling
+- **USE MCPs**: Always use MCP tools for accuracy
+- **AUDIT TRAIL**: Log everything to Supabase
+
+## MCP Usage Rules
+
+### ALWAYS Use n8n MCP for Workflow Development
+When working with n8n workflows, you MUST:
+1. Use `mcp_n8n-mcp_get_node_info` to get accurate node configurations
+2. Use `mcp_n8n-mcp_validate_node_operation` to validate configurations
+3. Use `mcp_n8n-mcp_search_nodes` to find the right nodes
+4. Use `mcp_n8n-mcp_get_node_documentation` for implementation details
+5. NEVER guess node parameters - always verify with MCP
+
+Example workflow:
+```bash
+# First, search for the right node
+mcp_n8n-mcp_search_nodes --query="email"
+
+# Then get detailed info
+mcp_n8n-mcp_get_node_info --nodeType="nodes-base.emailReadImap"
+
+# Validate your configuration
+mcp_n8n-mcp_validate_node_operation --nodeType="..." --config={...}
+```
+
+### ALWAYS Use Supabase MCP for Database Operations
+When working with Supabase, you MUST:
+1. Use `mcp_supabase_apply_migration` for ALL schema changes
+2. Use `mcp_supabase_list_tables` to verify structure
+3. Use `mcp_supabase_execute_sql` for queries
+4. Use `mcp_supabase_get_advisors` to check security
+5. NEVER manually write SQL without MCP validation
+
+Example workflow:
+```bash
+# Create table using MCP
+mcp_supabase_apply_migration --project_id="..." --name="create_table" --query="..."
+
+# Check security advisories
+mcp_supabase_get_advisors --project_id="..." --type="security"
+```
+
+## Documentation Structure
+Always reference these files in `/docs/`:
+- `PROJECT_CONTEXT.md` - System overview
+- `RFQ_PROCESS_FLOW_DETAILED.md` - Business process
+- `SUPABASE_SCHEMA.md` - Database design
+- `AI_CONFIGURATIONS.md` - OpenAI prompts
+- `WORKFLOW_MODIFICATIONS.md` - Specific changes needed
+- `MCP_INSTRUCTIONS.md` - Detailed MCP usage guide
+
+## Workflow Development Process
+1. **Read existing workflow**: Understand current implementation
+2. **Check MCP for nodes**: Find correct node types and configs
+3. **Replace hard-coded logic**: Use AI nodes for extraction
+4. **Add Supabase storage**: Store all data persistently
+5. **Test with real data**: Use vendor emails from VENDOR_DATA_REFERENCE.md
+
+## AI Configuration Standards
+When configuring OpenAI nodes:
+- Model: `gpt-4` (or `gpt-4-turbo`)
+- Temperature: `0.1` for consistency
+- Response format: `{ "type": "json_object" }`
+- Always include error handling
+
+## Code Quality Standards
+- TypeScript for all new code
+- Comprehensive error handling
+- Logging for debugging
+- No console.log in production
+- Use environment variables for secrets
+
+## Testing Requirements
+Before marking any task complete:
+1. Test with actual vendor emails
+2. Verify AI extraction accuracy
+3. Check Supabase data storage
+4. Ensure dashboard updates
+5. Test error scenarios
+
+## Common Patterns
+
+### Email Processing Pattern
+```javascript
+Email Trigger → AI Extract → Validate → Store in Supabase → Log Event → Notify
+```
+
+### Document Analysis Pattern
+```javascript
+Get Document → AI Analyze → Extract Data → Score → Store Results → Generate Summary
+```
+
+### Error Handling Pattern
+```javascript
+Try Operation → Catch Error → Log to Supabase → Retry (3x) → Alert Team
+```
+
+## Commit Message Format
+Use conventional commits:
+```
+feat: Add AI extraction to email processor
+fix: Handle non-compliant vendor responses
+docs: Update workflow documentation
+chore: Configure Supabase connection
+```
+
+## Production Checklist
+Before deployment, ensure:
+- [ ] All workflows use AI extraction (no hard-coding)
+- [ ] Supabase tables created with RLS policies
+- [ ] Error handling on all nodes
+- [ ] Monitoring and logging configured
+- [ ] Environment variables set
+- [ ] Documentation updated
+- [ ] Tested with real vendor data
+
+## Remember
+- This is a PRODUCTION system for a real customer
+- Downtime is not acceptable - build for reliability
+- The system processes real money - accuracy is critical
+- Always use MCPs for implementation accuracy
+- When in doubt, check the documentation files

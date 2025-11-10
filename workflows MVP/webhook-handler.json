@@ -1,0 +1,634 @@
+{
+  "name": "Bin Quraya RFQ - Dashboard Webhook Handler (DEMO)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "rfq-decision",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "5b221e16-9701-459b-9377-048793e1f434",
+      "name": "Webhook - Dashboard Actions",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -608,
+        208
+      ],
+      "webhookId": "rfq-decision-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse incoming webhook data from dashboard\n// FIX: Data comes in body object from webhook\nconst webhookData = items[0].json.body || items[0].json;\n\nconst action = webhookData.action || 'unknown';\nconst rfqId = webhookData.rfqId || '';\nconst vendorName = webhookData.vendorName || '';\nconst userId = webhookData.userId || '';\nconst comments = webhookData.comments || '';\nconst timestamp = new Date().toISOString();\n\n// Validate required fields\nif (!action || !rfqId) {\n  throw new Error('Missing required fields: action and rfqId');\n}\n\n// Process based on action type\nlet processedData = {};\n\nswitch(action) {\n  case 'APPROVE_PO':\n    processedData = {\n      action: 'generate_po',\n      rfqId,\n      vendorName,\n      approvedBy: userId,\n      approvalTimestamp: timestamp,\n      status: 'PO Generation Initiated',\n      nextStep: 'Generate and send PO to vendor'\n    };\n    break;\n    \n  case 'REJECT_ALL':\n    processedData = {\n      action: 'reject_all_vendors',\n      rfqId,\n      rejectedBy: userId,\n      rejectionReason: comments,\n      rejectionTimestamp: timestamp,\n      status: 'RFQ Cancelled',\n      nextStep: 'Send regret letters to all vendors'\n    };\n    break;\n    \n  case 'REQUEST_NEGOTIATION':\n    processedData = {\n      action: 'negotiate',\n      rfqId,\n      vendorName,\n      requestedBy: userId,\n      negotiationPoints: comments,\n      requestTimestamp: timestamp,\n      status: 'Negotiation Requested',\n      nextStep: 'Send negotiation request to vendor'\n    };\n    break;\n    \n  default:\n    processedData = {\n      action: 'unknown',\n      rfqId,\n      error: 'Unknown action type',\n      receivedAction: action\n    };\n}\n\nreturn [{ json: processedData }];"
+      },
+      "id": "de726a7d-b986-42bd-bb7f-2c77f613a5b3",
+      "name": "Process Webhook Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -400,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "route-1",
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "generate_po",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "route-2",
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "reject_all_vendors",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "route-3",
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "negotiate",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": 3
+        }
+      },
+      "id": "c30a811c-e900-4f0c-9164-c9a8f00d7c46",
+      "name": "Route by Action",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.3,
+      "position": [
+        -208,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Generate Purchase Order\nconst data = items[0].json;\nconst poNumber = `PO-${data.rfqId}-${Date.now()}`;\nconst currentDate = new Date();\nconst deliveryDate = new Date();\ndeliveryDate.setDate(deliveryDate.getDate() + 120);\n\nconst purchaseOrder = `\n====================================\nPURCHASE ORDER\n====================================\n\nPO Number: ${poNumber}\nDate: ${currentDate.toLocaleDateString()}\n\n------------------------------------\nBUYER INFORMATION\n------------------------------------\nCompany: Bin Quraya\nAddress: Riyadh, Saudi Arabia\nContact: Procurement Department\nEmail: binquraya.procurement.demo@gmail.com\n\n------------------------------------\nVENDOR INFORMATION\n------------------------------------\nVendor: ${data.vendorName}\n\n------------------------------------\nORDER DETAILS\n------------------------------------\nProject: Project Eagle\nItem: High-Pressure Shell & Tube Heat Exchanger\n9COM: 450-012547\nQuantity: 1\nMaterial Specification: SS 316/316L\n\n------------------------------------\nCOMMERCIAL TERMS\n------------------------------------\nPrice: As per your quotation\nPayment Terms: As agreed\nDelivery Date: ${deliveryDate.toLocaleDateString()}\nDelivery Terms: As per quotation\n\n------------------------------------\nTERMS AND CONDITIONS\n------------------------------------\n1. Quality certificates required with delivery\n2. Hydrostatic test report mandatory\n3. Aramco standards compliance required\n4. Penalty for late delivery: 0.5% per day\n\n------------------------------------\nAPPROVAL\n------------------------------------\nApproved by: ${data.approvedBy}\nApproval Date: ${currentDate.toLocaleDateString()}\n\nPlease acknowledge receipt of this PO within 48 hours.\n\n====================================\n`;\n\nreturn [{\n  json: {\n    poNumber,\n    purchaseOrder,\n    vendorName: data.vendorName,\n    rfqId: data.rfqId,\n    filename: `${poNumber}.txt`\n  }\n}];"
+      },
+      "id": "a10b09fa-d6e7-4b5c-8f6e-c446a043dc1a",
+      "name": "Generate Purchase Order",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.vendorName === 'Vendor A Industries' ? 'vendor.a.demo@gmail.com' : $json.vendorName === 'Vendor B Solutions' ? 'vendor.b.demo@gmail.com' : 'vendor.c.demo@gmail.com' }}",
+        "subject": "=🎉 Purchase Order {{ $('Generate Purchase Order').item.json.poNumber }} - Project Eagle",
+        "message": "=<!DOCTYPE html>\n<html>\n<head>\n    <meta charset=\"UTF-8\">\n    <style>\n        body {\n            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;\n            line-height: 1.6;\n            color: #333;\n            margin: 0;\n            padding: 0;\n            background-color: #f4f4f4;\n        }\n        .email-container {\n            max-width: 700px;\n            margin: 20px auto;\n            background: white;\n            border-radius: 8px;\n            overflow: hidden;\n            box-shadow: 0 2px 10px rgba(0,0,0,0.1);\n        }\n        .header {\n            background: linear-gradient(135deg, #2c3e50 0%, #1a252f 100%);\n            padding: 35px 30px;\n            text-align: center;\n            border-bottom: 4px solid #BF0D0D;\n        }\n        .logo {\n            max-width: 200px;\n            height: auto;\n            margin-bottom: 20px;\n            filter: drop-shadow(0 2px 4px rgba(0,0,0,0.2));\n        }\n        .header h1 {\n            color: #ffffff;\n            margin: 0;\n            font-size: 26px;\n            font-weight: 400;\n            letter-spacing: 2px;\n            text-transform: uppercase;\n        }\n        .content {\n            padding: 40px;\n        }\n        .po-number-badge {\n            background: #f0f8ff;\n            border-left: 4px solid #2c5aa0;\n            padding: 15px 20px;\n            margin: 20px 0;\n            border-radius: 4px;\n        }\n        .po-number-badge strong {\n            color: #2c5aa0;\n            font-size: 18px;\n        }\n        .section {\n            margin: 30px 0;\n        }\n        .section-title {\n            color: #2c5aa0;\n            font-size: 16px;\n            font-weight: 600;\n            margin-bottom: 15px;\n            padding-bottom: 8px;\n            border-bottom: 2px solid #e0e0e0;\n            text-transform: uppercase;\n            letter-spacing: 0.5px;\n        }\n        .info-grid {\n            display: table;\n            width: 100%;\n        }\n        .info-row {\n            display: table-row;\n        }\n        .info-label {\n            display: table-cell;\n            padding: 8px 15px 8px 0;\n            font-weight: 600;\n            color: #555;\n            width: 40%;\n        }\n        .info-value {\n            display: table-cell;\n            padding: 8px 0;\n            color: #333;\n        }\n        .highlight-box {\n            background: #fff9e6;\n            border: 1px solid #ffd700;\n            padding: 15px;\n            border-radius: 6px;\n            margin: 20px 0;\n        }\n        .terms-list {\n            list-style: none;\n            padding: 0;\n            margin: 0;\n        }\n        .terms-list li {\n            padding: 8px 0 8px 25px;\n            position: relative;\n        }\n        .terms-list li:before {\n            content: \"✓\";\n            position: absolute;\n            left: 0;\n            color: #28a745;\n            font-weight: bold;\n        }\n        .footer {\n            background: #f8f9fa;\n            padding: 25px;\n            text-align: center;\n            border-top: 3px solid #2c5aa0;\n        }\n        .footer p {\n            margin: 5px 0;\n            color: #666;\n            font-size: 14px;\n        }\n        .cta-button {\n            display: inline-block;\n            background: #28a745;\n            color: white;\n            padding: 12px 30px;\n            text-decoration: none;\n            border-radius: 5px;\n            margin: 20px 0;\n            font-weight: 600;\n        }\n        .powered-by {\n            margin-top: 20px;\n            padding-top: 15px;\n            border-top: 1px solid #ddd;\n        }\n        .powered-by img {\n            max-width: 120px;\n            height: auto;\n            opacity: 0.8;\n        }\n    </style>\n</head>\n<body>\n    <div class=\"email-container\">\n        <!-- Header with Logo -->\n        <div class=\"header\">\n            <img src=\"https://drive.google.com/uc?export=view&id=1eKki6KsEVObBe6xc_b1zYibDqVloE416\" alt=\"Bin Quraya\" class=\"logo\">\n            <h1>PURCHASE ORDER</h1>\n        </div>\n        \n        <!-- Main Content -->\n        <div class=\"content\">\n            <!-- PO Number Badge -->\n            <div class=\"po-number-badge\">\n                <strong>PO Number:</strong> {{ $('Generate Purchase Order').item.json.poNumber }}<br>\n                <strong>Date:</strong> {{ $now.format('MMMM DD, YYYY') }}\n            </div>\n            \n            <!-- Vendor Information -->\n            <div class=\"section\">\n                <div class=\"section-title\">Vendor Information</div>\n                <div class=\"info-grid\">\n                    <div class=\"info-row\">\n                        <div class=\"info-label\">Company:</div>\n                        <div class=\"info-value\">{{ $('Generate Purchase Order').item.json.vendorName }}</div>\n                    </div>\n                    <div class=\"info-row\">\n                        <div class=\"info-label\">Status:</div>\n                        <div class=\"info-value\"><strong style=\"color: #28a745;\">✓ PURCHASE ORDER APPROVED</strong></div>\n                    </div>\n                </div>\n            </div>\n            \n            <!-- Project Details -->\n            <div class=\"section\">\n                <div class=\"section-title\">Project Details</div>\n                <div class=\"info-grid\">\n                    <div class=\"info-row\">\n                        <div class=\"info-label\">Project:</div>\n                        <div class=\"info-value\">Project Eagle - Aramco Site 7 Expansion</div>\n                    </div>\n                    <div class=\"info-row\">\n                        <div class=\"info-label\">WBS Code:</div>\n                        <div class=\"info-value\">PE-A7-PRC-01</div>\n                    </div>\n                </div>\n            </div>\n            \n            <!-- Item Specifications -->\n            <div class=\"section\">\n                <div class=\"section-title\">Item Specifications</div>\n                <div class=\"info-grid\">\n                    <div class=\"info-row\">\n                        <div class=\"info-label\">Description:</div>\n                        <div class=\"info-value\">High-Pressure Shell & Tube Heat Exchanger</div>\n                    </div>\n                    <div class=\"info-row\">\n                        <div class=\"info-label\">9COM Number:</div>\n                        <div class=\"info-value\">450-012547</div>\n                    </div>\n                    <div class=\"info-row\">\n                        <div class=\"info-label\">Quantity:</div>\n                        <div class=\"info-value\">1 Unit</div>\n                    </div>\n                    <div class=\"info-row\">\n                        <div class=\"info-label\">Material Grade:</div>\n                        <div class=\"info-value\"><strong>Stainless Steel SS 316/316L (UNS S31603)</strong></div>\n                    </div>\n                    <div class=\"info-row\">\n                        <div class=\"info-label\">Design Standard:</div>\n                        <div class=\"info-value\">ASME Section VIII Div. 1</div>\n                    </div>\n                </div>\n            </div>\n            \n            <!-- Commercial Terms -->\n            <div class=\"section\">\n                <div class=\"section-title\">Commercial Terms</div>\n                <div class=\"info-grid\">\n                    <div class=\"info-row\">\n                        <div class=\"info-label\">Price:</div>\n                        <div class=\"info-value\">As per your submitted quotation</div>\n                    </div>\n                    <div class=\"info-row\">\n                        <div class=\"info-label\">Payment Terms:</div>\n                        <div class=\"info-value\">As agreed in quotation</div>\n                    </div>\n                    <div class=\"info-row\">\n                        <div class=\"info-label\">Expected Delivery:</div>\n                        <div class=\"info-value\">{{ $now.plus({days: 120}).format('MMMM DD, YYYY') }}</div>\n                    </div>\n                    <div class=\"info-row\">\n                        <div class=\"info-label\">Delivery Terms:</div>\n                        <div class=\"info-value\">As per quotation</div>\n                    </div>\n                </div>\n            </div>\n            \n            <!-- Requirements & Compliance -->\n            <div class=\"section\">\n                <div class=\"section-title\">Mandatory Requirements</div>\n                <ul class=\"terms-list\">\n                    <li>Material Test Certificates (MTC) as per EN 10204 3.1</li>\n                    <li>Hydrostatic test certificate at 1.5x design pressure</li>\n                    <li>ASME U-stamp and nameplate</li>\n                    <li>Full compliance with Aramco Standard SAES-A-301</li>\n                    <li>Quality documentation package</li>\n                    <li>Operation and maintenance manual</li>\n                </ul>\n            </div>\n            \n            <!-- Important Notice -->\n            <div class=\"highlight-box\">\n                <strong>⚠️ Important:</strong> Please acknowledge receipt of this Purchase Order within <strong>48 hours</strong>. \n                Late delivery penalties apply at 0.5% per day as per contract terms.\n            </div>\n            \n            <!-- Call to Action -->\n            <div style=\"text-align: center; margin: 30px 0;\">\n                <p style=\"margin-bottom: 15px;\">Questions about this Purchase Order?</p>\n                <a href=\"mailto:binquraya.procurement.demo@gmail.com\" class=\"cta-button\">Contact Procurement Team</a>\n            </div>\n        </div>\n        \n        <!-- Footer -->\n        <div class=\"footer\">\n            <p><strong>Bin Quraya Management & Trading</strong></p>\n            <p>Dhahran, Saudi Arabia</p>\n            <p>Email: binquraya.procurement.demo@gmail.com</p>\n            \n            <div class=\"powered-by\">\n                <img src=\"https://drive.google.com/uc?export=view&id=1vdzoOdNbRHB6f0vFOaaOibfEkFGtCzzx\" alt=\"Powered by Davon\">\n                <p style=\"color: #999; font-size: 12px; margin-top: 10px;\">\n                    This is an automated Purchase Order generated by the davon Decision Intelligence Engine\n                </p>\n            </div>\n        </div>\n    </div>\n</body>\n</html>",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "b13bb9a4-0aee-44f2-aff2-eed20205ba85",
+      "name": "Send PO to Winner",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        208,
+        0
+      ],
+      "webhookId": "d9775cb3-dab2-4fed-9b78-7c42cda5b8c5",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "zxi9fBhWaVy2UkSW",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "1A4p11MoSmkqwY7af9Cq3vN9HxTfZD0hfNNa1bi5YPXU",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1A4p11MoSmkqwY7af9Cq3vN9HxTfZD0hfNNa1bi5YPXU/edit#gid=0"
+        },
+        "options": {}
+      },
+      "id": "077b2b05-920e-419e-9d67-778b7237b28a",
+      "name": "Get All Vendors for Rejection",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        0,
+        208
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "PaMqLOffUaABISUn",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.Vendor_Email }}",
+        "subject": "=RFQ {{ $json.RFQ_ID }} - Regret Notice",
+        "message": "=<html>\n<head>\n    <style>\n        /* Same styles as Purchase Order - copy from above */\n        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; background-color: #f4f4f4; }\n        .email-container { max-width: 700px; margin: 20px auto; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }\n        .header { background: linear-gradient(135deg, #2c3e50 0%, #1a252f 100%); padding: 35px 30px; text-align: center; border-bottom: 4px solid #BF0D0D; }\n        .logo { max-width: 200px; height: auto; margin-bottom: 20px; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.2)); }\n        .header h1 { color: #ffffff; margin: 0; font-size: 26px; font-weight: 400; letter-spacing: 2px; text-transform: uppercase; }\n        .content { padding: 40px; }\n        .message-box { background: #fff3e6; border-left: 4px solid #ff9800; padding: 20px; margin: 20px 0; border-radius: 4px; }\n        .footer { background: #f8f9fa; padding: 25px; text-align: center; border-top: 3px solid #2c5aa0; }\n        .footer p { margin: 5px 0; color: #666; font-size: 14px; }\n        .powered-by { margin-top: 20px; padding-top: 15px; border-top: 1px solid #ddd; }\n        .powered-by img { max-width: 120px; height: auto; opacity: 0.8; }\n    </style>\n</head>\n<body>\n    <div class=\"email-container\">\n        <div class=\"header\">\n            <img src=\"https://drive.google.com/uc?export=view&id=1eKki6KsEVObBe6xc_b1zYibDqVloE416\" alt=\"Bin Quraya\" class=\"logo\">\n            <h1>RFQ OUTCOME NOTIFICATION</h1>\n        </div>\n        \n        <div class=\"content\">\n            <div class=\"message-box\">\n                <strong>RFQ Reference:</strong> {{ $json.RFQ_ID }}\n            </div>\n            \n            <p>Dear {{ $json.Vendor_Name }},</p>\n            \n            <p>Thank you for your quotation for the <strong>High-Pressure Shell & Tube Heat Exchanger</strong> (9COM: 450-012547) for Project Eagle - Aramco Site 7 Expansion.</p>\n            \n            <p>After careful technical and commercial evaluation of all submitted offers, we regret to inform you that your quotation has not been selected for this procurement.</p>\n            \n            <p>We sincerely appreciate the time and effort you invested in preparing your proposal. Your participation in our tender process is valued, and we look forward to future opportunities to work together.</p>\n            \n            <p>Best regards,<br>\n            <strong>Bin Quraya Procurement Department</strong></p>\n        </div>\n        \n        <div class=\"footer\">\n            <p><strong>Bin Quraya Management & Trading</strong></p>\n            <p>Dhahran, Saudi Arabia</p>\n            <p>Email: binquraya.procurement.demo@gmail.com</p>\n            \n            <div class=\"powered-by\">\n                <img src=\"https://drive.google.com/uc?export=view&id=1vdzoOdNbRHB6f0vFOaaOibfEkFGtCzzx\" alt=\"Powered by Davon\">\n                <p style=\"color: #999; font-size: 12px; margin-top: 10px;\">\n                    This is an automated notification from the davon Decision Intelligence Engine\n                </p>\n            </div>\n        </div>\n    </div>\n</body>\n</html>",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "c937056d-a274-44b4-94e8-589f87175c35",
+      "name": "Send Regret Letters",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        624,
+        208
+      ],
+      "webhookId": "3839c550-cfe6-40e0-935c-ef8631c8203e",
+      "executeOnce": false,
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "zxi9fBhWaVy2UkSW",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.vendorName === 'Vendor A Industries' ? 'vendor.a.demo@gmail.com' : $json.vendorName === 'Vendor B Solutions' ? 'vendor.b.demo@gmail.com' : 'vendor.c.demo@gmail.com' }}",
+        "subject": "Negotiation Request - RFQ Project Eagle",
+        "message": "=<html>\n<head>\n    <style>\n        /* Same styles as Purchase Order - copy from above */\n        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; background-color: #f4f4f4; }\n        .email-container { max-width: 700px; margin: 20px auto; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }\n        .header { background: linear-gradient(135deg, #2c3e50 0%, #1a252f 100%); padding: 35px 30px; text-align: center; border-bottom: 4px solid #BF0D0D; }\n        .logo { max-width: 200px; height: auto; margin-bottom: 20px; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.2)); }\n        .header h1 { color: #ffffff; margin: 0; font-size: 26px; font-weight: 400; letter-spacing: 2px; text-transform: uppercase; }\n        .content { padding: 40px; }\n        .highlight-box { background: #e8f5e9; border-left: 4px solid #4caf50; padding: 20px; margin: 20px 0; border-radius: 4px; }\n        .negotiation-box { background: #fff9e6; border: 1px solid #ffd700; padding: 20px; border-radius: 6px; margin: 20px 0; }\n        .cta-button { display: inline-block; background: #2c5aa0; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; margin: 20px 0; font-weight: 600; }\n        .footer { background: #f8f9fa; padding: 25px; text-align: center; border-top: 3px solid #2c5aa0; }\n        .footer p { margin: 5px 0; color: #666; font-size: 14px; }\n        .powered-by { margin-top: 20px; padding-top: 15px; border-top: 1px solid #ddd; }\n        .powered-by img { max-width: 120px; height: auto; opacity: 0.8; }\n    </style>\n</head>\n<body>\n    <div class=\"email-container\">\n        <div class=\"header\">\n            <img src=\"https://drive.google.com/uc?export=view&id=1eKki6KsEVObBe6xc_b1zYibDqVloE416\" alt=\"Bin Quraya\" class=\"logo\">\n            <h1>NEGOTIATION REQUEST</h1>\n        </div>\n        \n        <div class=\"content\">\n            <div class=\"highlight-box\">\n                <strong>✓ Your offer is under serious consideration</strong>\n            </div>\n            \n            <p>Dear {{ $json.vendorName }},</p>\n            \n            <p>Thank you for your competitive quotation for the <strong>High-Pressure Shell & Tube Heat Exchanger</strong> for Project Eagle.</p>\n            \n            <p>Your technical proposal has been approved and your commercial terms have been carefully evaluated. Your offer is a strong candidate for award.</p>\n            \n            <div class=\"negotiation-box\">\n                <p><strong>📋 Requested Improvements:</strong></p>\n                <p>{{ $json.negotiationPoints || 'We would like to discuss potential improvements to delivery time and payment terms.' }}</p>\n            </div>\n            \n            <p>If you can accommodate these adjustments, we would be pleased to proceed with awarding this contract to your company.</p>\n            \n            <p><strong>⏰ Response Timeline:</strong> Please submit your revised offer within <strong>48 hours</strong> to maintain consideration.</p>\n            \n            <div style=\"text-align: center; margin: 30px 0;\">\n                <a href=\"mailto:binquraya.procurement.demo@gmail.com\" class=\"cta-button\">Submit Revised Offer</a>\n            </div>\n            \n            <p>We appreciate your flexibility and look forward to your response.</p>\n            \n            <p>Best regards,<br>\n            <strong>Bin Quraya Procurement Department</strong></p>\n        </div>\n        \n        <div class=\"footer\">\n            <p><strong>Bin Quraya Management & Trading</strong></p>\n            <p>Dhahran, Saudi Arabia</p>\n            <p>Email: binquraya.procurement.demo@gmail.com</p>\n            \n            <div class=\"powered-by\">\n                <img src=\"https://drive.google.com/uc?export=view&id=1vdzoOdNbRHB6f0vFOaaOibfEkFGtCzzx\" alt=\"Powered by Davon\">\n                <p style=\"color: #999; font-size: 12px; margin-top: 10px;\">\n                    This is an automated notification from the davon Decision Intelligence Engine\n                </p>\n            </div>\n        </div>\n    </div>\n</body>\n</html>",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "2fb183d5-c9c2-4b74-83be-7087091d0bc8",
+      "name": "Send Negotiation Request",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        400
+      ],
+      "webhookId": "cca51954-4675-46e3-b6d4-e074e0036d29",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "zxi9fBhWaVy2UkSW",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "1A4p11MoSmkqwY7af9Cq3vN9HxTfZD0hfNNa1bi5YPXU",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1A4p11MoSmkqwY7af9Cq3vN9HxTfZD0hfNNa1bi5YPXU/edit#gid=0"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Status": "={{ $json.Status }}",
+            "Vendor_Email": "={{ $json.Vendor_Email }}"
+          },
+          "matchingColumns": [
+            "Vendor_Email"
+          ],
+          "schema": [
+            {
+              "id": "RFQ_ID",
+              "displayName": "RFQ_ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Vendor_Name",
+              "displayName": "Vendor_Name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Vendor_Email",
+              "displayName": "Vendor_Email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Date_Sent",
+              "displayName": "Date_Sent",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Date_Received",
+              "displayName": "Date_Received",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "TBC_Sent_Date",
+              "displayName": "TBC_Sent_Date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Technical_Compliance",
+              "displayName": "Technical_Compliance",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Material_Grade",
+              "displayName": "Material_Grade",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Date_Approved",
+              "displayName": "Date_Approved",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Attachment_Link",
+              "displayName": "Attachment_Link",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "9COM Project",
+              "displayName": "9COM Project",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Commercial_Score",
+              "displayName": "Commercial_Score",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Commercial_Rank",
+              "displayName": "Commercial_Rank",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Decision_Sent_Date",
+              "displayName": "Decision_Sent_Date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "readOnly": true,
+              "removed": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "e0b0b92d-63de-4f17-a697-a94732d6dc91",
+      "name": "Update Final Status",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1760,
+        176
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "PaMqLOffUaABISUn",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Return success response to dashboard\nreturn [{\n  json: {\n    success: true,\n    message: 'Action processed successfully',\n    action: $json.action,\n    rfqId: $json.rfqId,\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "380322e0-425e-407f-8e95-9d21aa015b95",
+      "name": "Success Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2000,
+        176
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Filter out Vendor A AND any vendors with missing emails\nconst allVendors = items;\nconst losers = allVendors.filter(vendor => {\n  const vendorName = vendor.json.Vendor_Name || '';\n  const vendorEmail = vendor.json.Vendor_Email || '';\n  \n  // Keep only if NOT Vendor A AND has a valid email\n  const isNotVendorA = vendorName !== 'Vendor A Industries';\n  const hasEmail = vendorEmail.includes('@') && vendorEmail.length > 5;\n  \n  return isNotVendorA && hasEmail;\n});\n\nreturn losers;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        208,
+        208
+      ],
+      "id": "bea4b8e4-94d6-4216-97f1-5d8eddc689cb",
+      "name": "Filter to Vendors B & C Only"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Prepare data for sheet update based on which route was taken\nconst processData = $('Process Webhook Data').item.json;\nconst action = processData.action;\n\n// For reject_all_vendors, get vendor data from the filter node (before Gmail)\nif (action === 'reject_all_vendors') {\n  // Get the vendors from BEFORE they went through Gmail\n  const vendors = $('Filter to Vendors B & C Only').all();\n  \n  return vendors.map(vendor => ({\n    json: {\n      Vendor_Email: vendor.json.Vendor_Email,\n      Status: 'Rejected'\n    }\n  }));\n}\n\n// For other actions (generate_po, negotiate)\nlet updateData = {};\n\nif (action === 'generate_po') {\n  const poData = $('Generate Purchase Order').item.json;\n  updateData = {\n    Vendor_Email: poData.vendorName === 'Vendor A Industries' ? 'vendor.a.demo@gmail.com' : \n                   poData.vendorName === 'Vendor B Solutions' ? 'vendor.b.demo@gmail.com' : \n                   'vendor.c.demo@gmail.com',\n    Status: 'PO Issued'\n  };\n} else if (action === 'negotiate') {\n  updateData = {\n    Vendor_Email: processData.vendorName === 'Vendor A Industries' ? 'vendor.a.demo@gmail.com' : \n                   processData.vendorName === 'Vendor B Solutions' ? 'vendor.b.demo@gmail.com' : \n                   'vendor.c.demo@gmail.com',\n    Status: 'In Negotiation'\n  };\n}\n\nreturn [{ json: updateData }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1104,
+        224
+      ],
+      "id": "ea5e51d3-c3fb-4a3f-9720-7e3c8ac9e9be",
+      "name": "Prepare Sheet Update Data"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook - Dashboard Actions": {
+      "main": [
+        [
+          {
+            "node": "Process Webhook Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Webhook Data": {
+      "main": [
+        [
+          {
+            "node": "Route by Action",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route by Action": {
+      "main": [
+        [
+          {
+            "node": "Generate Purchase Order",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get All Vendors for Rejection",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Negotiation Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Purchase Order": {
+      "main": [
+        [
+          {
+            "node": "Send PO to Winner",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send PO to Winner": {
+      "main": [
+        [
+          {
+            "node": "Prepare Sheet Update Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get All Vendors for Rejection": {
+      "main": [
+        [
+          {
+            "node": "Filter to Vendors B & C Only",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Regret Letters": {
+      "main": [
+        [
+          {
+            "node": "Prepare Sheet Update Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Negotiation Request": {
+      "main": [
+        [
+          {
+            "node": "Prepare Sheet Update Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Final Status": {
+      "main": [
+        [
+          {
+            "node": "Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter to Vendors B & C Only": {
+      "main": [
+        [
+          {
+            "node": "Send Regret Letters",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Sheet Update Data": {
+      "main": [
+        [
+          {
+            "node": "Update Final Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "66c7b3d6-8e6f-4904-b9ab-c7de2784e5ca",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "5ff48a5b518af62534474e14d71c65115a3f49ab46ef1ddaf82c3d8f27abe8ab"
+  },
+  "id": "8zDsDR4YbzSsMtaI",
+  "tags": []
+}

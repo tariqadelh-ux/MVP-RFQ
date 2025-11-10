@@ -1,0 +1,1039 @@
+{
+  "name": "bin_quraya_email_processor_production",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute",
+              "minute": 5
+            }
+          ]
+        },
+        "simple": false,
+        "filters": {
+          "q": "is:unread subject:RFQ"
+        },
+        "options": {
+          "downloadAttachments": true
+        }
+      },
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        250,
+        300
+      ],
+      "id": "gmail-trigger",
+      "name": "Gmail Monitor - RFQ Responses",
+      "webhookId": "gmail-webhook-rfq"
+    },
+    {
+      "parameters": {
+        "resource": "chat",
+        "operation": "complete",
+        "options": {
+          "temperature": 0.1,
+          "maxTokens": 500
+        },
+        "simplifyOutput": true,
+        "model": {
+          "__rl": true,
+          "value": "gpt-4o",
+          "mode": "list"
+        },
+        "messages": {
+          "values": [
+            {
+              "role": "system",
+              "content": "You are a procurement specialist extracting vendor information from RFQ response emails. Always return valid JSON with the following fields:\n- vendor_name: Company name\n- vendor_email: Email address\n- contact_person: Contact person name\n- rfq_reference: RFQ number (format: XXX-XXXXXX)\n- has_quotation: boolean (true if quotation attached)\n- confidence_score: 0-1 (how confident you are in the extraction)"
+            },
+            {
+              "role": "user",
+              "content": "Email from: {{$json.from.value[0].address}}\nSubject: {{$json.subject}}\nBody: {{$json.text || $json.snippet}}\n\nExtract vendor and RFQ information from this email."
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1.1,
+      "position": [
+        450,
+        300
+      ],
+      "id": "openai-extract-vendor",
+      "name": "ChatGPT 5 - Extract Vendor Info"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse ChatGPT response and prepare data\ntry {\n  const aiResponse = JSON.parse($input.first().json.message.content);\n  const emailData = $('gmail-trigger').first().json;\n  \n  return {\n    json: {\n      // AI extracted data\n      vendor_name: aiResponse.vendor_name,\n      vendor_email: aiResponse.vendor_email || emailData.from.value[0].address,\n      contact_person: aiResponse.contact_person,\n      rfq_reference: aiResponse.rfq_reference,\n      has_quotation: aiResponse.has_quotation,\n      ai_confidence: aiResponse.confidence_score,\n      \n      // Email metadata\n      email_message_id: emailData.id,\n      email_thread_id: emailData.threadId,\n      email_subject: emailData.subject,\n      email_body: emailData.text || emailData.snippet,\n      email_received_at: new Date(parseInt(emailData.internalDate)).toISOString(),\n      \n      // Attachment info\n      attachment_count: emailData.attachments?.length || 0,\n      attachments: emailData.attachments || []\n    }\n  };\n} catch (error) {\n  throw new Error('Failed to parse ChatGPT response: ' + error.message);\n}"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        650,
+        300
+      ],
+      "id": "parse-ai-response",
+      "name": "Parse AI Response"
+    },
+    {
+      "parameters": {
+        "resource": "row",
+        "operation": "create",
+        "tableId": "email_logs",
+        "dataToSend": "defineBelow",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "message_id",
+              "fieldValue": "={{$json.email_message_id}}"
+            },
+            {
+              "fieldId": "thread_id",
+              "fieldValue": "={{$json.email_thread_id}}"
+            },
+            {
+              "fieldId": "direction",
+              "fieldValue": "inbound"
+            },
+            {
+              "fieldId": "from_email",
+              "fieldValue": "={{$json.vendor_email}}"
+            },
+            {
+              "fieldId": "subject",
+              "fieldValue": "={{$json.email_subject}}"
+            },
+            {
+              "fieldId": "rfq_id",
+              "fieldValue": "={{$json.rfq_reference}}"
+            },
+            {
+              "fieldId": "received_at",
+              "fieldValue": "={{$json.email_received_at}}"
+            },
+            {
+              "fieldId": "processed_at",
+              "fieldValue": "={{new Date().toISOString()}}"
+            },
+            {
+              "fieldId": "processing_status",
+              "fieldValue": "processed"
+            },
+            {
+              "fieldId": "ai_extracted_data",
+              "fieldValue": "={{JSON.stringify({vendor_name: $json.vendor_name, contact_person: $json.contact_person, confidence: $json.ai_confidence})}}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        850,
+        300
+      ],
+      "id": "log-email",
+      "name": "Supabase - Log Email"
+    },
+    {
+      "parameters": {
+        "resource": "row",
+        "operation": "getAll",
+        "tableId": "vendors",
+        "filterType": "manual",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "vendor_email",
+              "condition": "eq",
+              "keyValue": "={{$json.vendor_email}}"
+            }
+          ]
+        },
+        "returnAll": false,
+        "limit": 1
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1050,
+        300
+      ],
+      "id": "lookup-vendor",
+      "name": "Supabase - Lookup Vendor",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{$json.length}}",
+                    "rightValue": "0",
+                    "operator": {
+                      "type": "number",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{$json.length}}",
+                    "rightValue": "0",
+                    "operator": {
+                      "type": "number",
+                      "operation": "larger"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.3,
+      "position": [
+        1250,
+        300
+      ],
+      "id": "vendor-exists-check",
+      "name": "Vendor Exists?"
+    },
+    {
+      "parameters": {
+        "resource": "row",
+        "operation": "create",
+        "tableId": "vendors",
+        "dataToSend": "defineBelow",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "vendor_id",
+              "fieldValue": "=9V-{{Math.floor(Math.random() * 9000) + 1000}}"
+            },
+            {
+              "fieldId": "vendor_name",
+              "fieldValue": "={{$('Parse AI Response').item.json.vendor_name}}"
+            },
+            {
+              "fieldId": "vendor_email",
+              "fieldValue": "={{$('Parse AI Response').item.json.vendor_email}}"
+            },
+            {
+              "fieldId": "contact_person",
+              "fieldValue": "={{$('Parse AI Response').item.json.contact_person}}"
+            },
+            {
+              "fieldId": "vendor_type",
+              "fieldValue": "unknown"
+            },
+            {
+              "fieldId": "vendor_tier",
+              "fieldValue": "new"
+            },
+            {
+              "fieldId": "is_active",
+              "fieldValue": "true"
+            },
+            {
+              "fieldId": "is_approved",
+              "fieldValue": "false"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1450,
+        200
+      ],
+      "id": "create-vendor",
+      "name": "Supabase - Create New Vendor"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get vendor data from appropriate source\nconst vendorData = $input.first().json;\nconst aiData = $('parse-ai-response').first().json;\n\nreturn {\n  json: {\n    vendor_id: vendorData.id || vendorData.vendor_id,\n    vendor_name: vendorData.vendor_name,\n    vendor_email: vendorData.vendor_email,\n    rfq_reference: aiData.rfq_reference,\n    has_attachments: aiData.attachment_count > 0,\n    attachments: aiData.attachments\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1650,
+        300
+      ],
+      "id": "prepare-vendor-data",
+      "name": "Prepare Vendor Data"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{$json.has_attachments}}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{$json.has_attachments}}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "false",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.3,
+      "position": [
+        1850,
+        300
+      ],
+      "id": "has-attachments",
+      "name": "Has Attachments?"
+    },
+    {
+      "parameters": {
+        "resource": "row",
+        "operation": "create",
+        "tableId": "vendor_offers",
+        "dataToSend": "defineBelow",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "rfq_id",
+              "fieldValue": "={{$json.rfq_reference}}"
+            },
+            {
+              "fieldId": "vendor_id",
+              "fieldValue": "={{$json.vendor_id}}"
+            },
+            {
+              "fieldId": "email_message_id",
+              "fieldValue": "={{$('Parse AI Response').item.json.email_message_id}}"
+            },
+            {
+              "fieldId": "material_offered",
+              "fieldValue": "Pending document analysis"
+            },
+            {
+              "fieldId": "compliance_status",
+              "fieldValue": "pending"
+            },
+            {
+              "fieldId": "unit_price",
+              "fieldValue": "0"
+            },
+            {
+              "fieldId": "total_price",
+              "fieldValue": "0"
+            },
+            {
+              "fieldId": "delivery_days",
+              "fieldValue": "0"
+            },
+            {
+              "fieldId": "payment_terms",
+              "fieldValue": "TBD"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        2050,
+        400
+      ],
+      "id": "create-placeholder-offer",
+      "name": "Supabase - Create Placeholder Offer"
+    },
+    {
+      "parameters": {
+        "operation": "text",
+        "binaryPropertyName": "attachment",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [
+        2150,
+        200
+      ],
+      "id": "extract-pdf-text",
+      "name": "Extract PDF Text"
+    },
+    {
+      "parameters": {
+        "resource": "chat",
+        "operation": "complete",
+        "options": {
+          "temperature": 0.1,
+          "maxTokens": 1000
+        },
+        "simplifyOutput": true,
+        "model": {
+          "__rl": true,
+          "value": "gpt-4o",
+          "mode": "list"
+        },
+        "messages": {
+          "values": [
+            {
+              "role": "system",
+              "content": "You are a procurement specialist analyzing vendor quotations for heat exchangers. Extract the following information and return as valid JSON:\n- material_grade: Material specification (MUST check against requirement: SS 316L)\n- unit_price: Price per unit (number only)\n- currency: Currency code (USD, SAR, EUR, etc.)\n- delivery_days: Delivery time in days (number only)\n- payment_terms: Payment terms (e.g., '30/70', '20/80')\n- warranty_months: Warranty period in months\n- compliance_status: 'compliant' if material is SS 316L or 316/316L, 'non-compliant' otherwise\n- certifications: Array of certifications mentioned\n- confidence_score: 0-1"
+            },
+            {
+              "role": "user",
+              "content": "Analyze this vendor quotation document:\n\n{{$json.data}}\n\nRequired material: SS 316L for all wetted parts (tubes, tubesheet, channel)"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1.1,
+      "position": [
+        2350,
+        200
+      ],
+      "id": "analyze-document",
+      "name": "ChatGPT 5 - Analyze Document"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process each attachment\nconst attachments = $('prepare-vendor-data').first().json.attachments;\nconst outputs = [];\n\nfor (let i = 0; i < attachments.length; i++) {\n  outputs.push({\n    json: {\n      attachment_id: attachments[i].attachmentId,\n      filename: attachments[i].filename,\n      mimeType: attachments[i].mimeType,\n      size: attachments[i].size,\n      index: i\n    },\n    binary: {\n      attachment: $('gmail-trigger').first().binary[`attachment_${i}`]\n    }\n  });\n}\n\nreturn outputs;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2050,
+        200
+      ],
+      "id": "process-attachments",
+      "name": "Process Each Attachment"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse document analysis results\ntry {\n  const aiResponse = JSON.parse($input.first().json.message.content);\n  const vendorData = $('prepare-vendor-data').first().json;\n  \n  return {\n    json: {\n      // Vendor identification\n      vendor_id: vendorData.vendor_id,\n      rfq_id: vendorData.rfq_reference,\n      \n      // AI extracted commercial data\n      material_grade: aiResponse.material_grade,\n      unit_price: parseFloat(aiResponse.unit_price) || 0,\n      currency: aiResponse.currency || 'USD',\n      delivery_days: parseInt(aiResponse.delivery_days) || 0,\n      payment_terms: aiResponse.payment_terms,\n      warranty_months: parseInt(aiResponse.warranty_months) || 0,\n      \n      // Compliance check\n      compliance_status: aiResponse.compliance_status,\n      certifications: aiResponse.certifications || [],\n      \n      // Metadata\n      ai_confidence: aiResponse.confidence_score,\n      requires_tbc: aiResponse.compliance_status === 'non-compliant'\n    }\n  };\n} catch (error) {\n  throw new Error('Failed to parse document analysis: ' + error.message);\n}"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2450,
+        200
+      ],
+      "id": "parse-document-analysis",
+      "name": "Parse Document Analysis"
+    },
+    {
+      "parameters": {
+        "resource": "row",
+        "operation": "update",
+        "tableId": "vendor_offers",
+        "filterType": "manual",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "rfq_id",
+              "condition": "eq",
+              "keyValue": "={{$json.rfq_id}}"
+            },
+            {
+              "keyName": "vendor_id",
+              "condition": "eq",
+              "keyValue": "={{$json.vendor_id}}"
+            }
+          ]
+        },
+        "dataToSend": "defineBelow",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "material_offered",
+              "fieldValue": "={{$json.material_grade}}"
+            },
+            {
+              "fieldId": "material_grade",
+              "fieldValue": "={{$json.material_grade}}"
+            },
+            {
+              "fieldId": "unit_price",
+              "fieldValue": "={{$json.unit_price}}"
+            },
+            {
+              "fieldId": "total_price",
+              "fieldValue": "={{$json.unit_price * 10}}"
+            },
+            {
+              "fieldId": "currency",
+              "fieldValue": "={{$json.currency}}"
+            },
+            {
+              "fieldId": "delivery_days",
+              "fieldValue": "={{$json.delivery_days}}"
+            },
+            {
+              "fieldId": "payment_terms",
+              "fieldValue": "={{$json.payment_terms}}"
+            },
+            {
+              "fieldId": "warranty_months",
+              "fieldValue": "={{$json.warranty_months}}"
+            },
+            {
+              "fieldId": "compliance_status",
+              "fieldValue": "={{$json.compliance_status}}"
+            },
+            {
+              "fieldId": "certifications",
+              "fieldValue": "={{$json.certifications}}"
+            },
+            {
+              "fieldId": "ai_confidence",
+              "fieldValue": "={{$json.ai_confidence}}"
+            },
+            {
+              "fieldId": "ai_extraction_log",
+              "fieldValue": "={{JSON.stringify({extracted_at: new Date().toISOString(), confidence: $json.ai_confidence})}}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        2650,
+        200
+      ],
+      "id": "update-vendor-offer",
+      "name": "Supabase - Update Vendor Offer"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{$json.requires_tbc}}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{$json.requires_tbc}}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "false",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.3,
+      "position": [
+        2850,
+        200
+      ],
+      "id": "check-compliance",
+      "name": "Requires TBC?"
+    },
+    {
+      "parameters": {
+        "sendTo": "={{$('Prepare Vendor Data').item.json.vendor_email}}",
+        "subject": "⚠️ Technical Bid Clarification Required - RFQ {{$json.rfq_id}}",
+        "emailType": "html",
+        "message": "=<html><body style='font-family: Arial, sans-serif;'>\n<h2>Technical Bid Clarification Required</h2>\n<p>Dear {{$('Prepare Vendor Data').item.json.vendor_name}},</p>\n<p>Thank you for your quotation. However, we have identified a <strong>critical technical non-compliance</strong>:</p>\n<div style='background: #fff3cd; padding: 15px; margin: 20px 0;'>\n<p><strong>Issue:</strong> Your offer specifies <span style='color: red;'>{{$json.material_grade}}</span> material grade.</p>\n<p><strong>Requirement:</strong> All wetted parts MUST be <span style='color: green;'>SS 316L or 316/316L</span>.</p>\n</div>\n<p><strong>Action Required:</strong> Please revise your offer to comply with SS 316L requirement and resubmit.</p>\n<p>Best regards,<br>Bin Quraya Procurement Team</p>\n</body></html>",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        3050,
+        100
+      ],
+      "id": "send-tbc",
+      "name": "Gmail - Send TBC"
+    },
+    {
+      "parameters": {
+        "resource": "row",
+        "operation": "update",
+        "tableId": "vendor_offers",
+        "filterType": "manual",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "rfq_id",
+              "condition": "eq",
+              "keyValue": "={{$json.rfq_id}}"
+            },
+            {
+              "keyName": "vendor_id",
+              "condition": "eq",
+              "keyValue": "={{$json.vendor_id}}"
+            }
+          ]
+        },
+        "dataToSend": "defineBelow",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "tbc_issued",
+              "fieldValue": "true"
+            },
+            {
+              "fieldId": "tbc_issued_at",
+              "fieldValue": "={{new Date().toISOString()}}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        3250,
+        100
+      ],
+      "id": "mark-tbc-sent",
+      "name": "Supabase - Mark TBC Sent"
+    },
+    {
+      "parameters": {
+        "resource": "row",
+        "operation": "create",
+        "tableId": "rfq_events",
+        "dataToSend": "defineBelow",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "event_type",
+              "fieldValue": "={{$json.has_attachments ? 'VENDOR_RESPONDED' : 'VENDOR_ACKNOWLEDGED'}}"
+            },
+            {
+              "fieldId": "rfq_id",
+              "fieldValue": "={{$json.rfq_reference}}"
+            },
+            {
+              "fieldId": "vendor_id",
+              "fieldValue": "={{$json.vendor_id}}"
+            },
+            {
+              "fieldId": "vendor_name",
+              "fieldValue": "={{$json.vendor_name}}"
+            },
+            {
+              "fieldId": "title",
+              "fieldValue": "={{$json.has_attachments ? 'Vendor Response Received' : 'Vendor Acknowledgment'}}"
+            },
+            {
+              "fieldId": "description",
+              "fieldValue": "={{$json.vendor_name}} {{$json.has_attachments ? 'submitted quotation' : 'acknowledged RFQ'}}"
+            },
+            {
+              "fieldId": "details",
+              "fieldValue": "={{JSON.stringify({attachment_count: $('Parse AI Response').item.json.attachment_count, confidence_score: $('Parse AI Response').item.json.ai_confidence})}}"
+            },
+            {
+              "fieldId": "source",
+              "fieldValue": "workflow"
+            },
+            {
+              "fieldId": "workflow_execution_id",
+              "fieldValue": "={{$execution.id}}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        2250,
+        400
+      ],
+      "id": "log-event",
+      "name": "Supabase - Log Event"
+    },
+    {
+      "parameters": {
+        "type": "n8n-nodes-base.errorTrigger",
+        "typeVersion": 1,
+        "position": [
+          250,
+          700
+        ],
+        "id": "error-trigger",
+        "name": "Error Trigger"
+      }
+    },
+    {
+      "parameters": {
+        "resource": "row",
+        "operation": "create",
+        "tableId": "workflow_executions",
+        "dataToSend": "defineBelow",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "workflow_name",
+              "fieldValue": "email-processor-production"
+            },
+            {
+              "fieldId": "execution_id",
+              "fieldValue": "={{$execution.id}}"
+            },
+            {
+              "fieldId": "status",
+              "fieldValue": "error"
+            },
+            {
+              "fieldId": "error_message",
+              "fieldValue": "={{$json.error.message}}"
+            },
+            {
+              "fieldId": "error_node",
+              "fieldValue": "={{$json.error.node?.name}}"
+            },
+            {
+              "fieldId": "input_data",
+              "fieldValue": "={{JSON.stringify($json.error.data)}}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        450,
+        700
+      ],
+      "id": "log-error",
+      "name": "Supabase - Log Error"
+    }
+  ],
+  "connections": {
+    "gmail-trigger": {
+      "main": [
+        [
+          {
+            "node": "openai-extract-vendor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "openai-extract-vendor": {
+      "main": [
+        [
+          {
+            "node": "parse-ai-response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "parse-ai-response": {
+      "main": [
+        [
+          {
+            "node": "log-email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "log-email": {
+      "main": [
+        [
+          {
+            "node": "lookup-vendor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "lookup-vendor": {
+      "main": [
+        [
+          {
+            "node": "vendor-exists-check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "vendor-exists-check": {
+      "main": [
+        [
+          {
+            "node": "create-vendor",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "prepare-vendor-data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "create-vendor": {
+      "main": [
+        [
+          {
+            "node": "prepare-vendor-data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "prepare-vendor-data": {
+      "main": [
+        [
+          {
+            "node": "has-attachments",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "has-attachments": {
+      "main": [
+        [
+          {
+            "node": "process-attachments",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "create-placeholder-offer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "process-attachments": {
+      "main": [
+        [
+          {
+            "node": "extract-pdf-text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "extract-pdf-text": {
+      "main": [
+        [
+          {
+            "node": "analyze-document",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "analyze-document": {
+      "main": [
+        [
+          {
+            "node": "parse-document-analysis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "parse-document-analysis": {
+      "main": [
+        [
+          {
+            "node": "update-vendor-offer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "update-vendor-offer": {
+      "main": [
+        [
+          {
+            "node": "check-compliance",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "check-compliance": {
+      "main": [
+        [
+          {
+            "node": "send-tbc",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "log-event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "send-tbc": {
+      "main": [
+        [
+          {
+            "node": "mark-tbc-sent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "mark-tbc-sent": {
+      "main": [
+        [
+          {
+            "node": "log-event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "create-placeholder-offer": {
+      "main": [
+        [
+          {
+            "node": "log-event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "log-error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveExecutionProgress": true,
+    "saveManualExecutions": true,
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "executionTimeout": 300,
+    "timezone": "Asia/Riyadh"
+  },
+  "id": "email-processor-production"
+}

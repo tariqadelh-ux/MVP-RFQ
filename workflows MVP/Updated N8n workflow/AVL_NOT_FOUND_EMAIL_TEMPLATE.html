@@ -1,0 +1,72 @@
+<html>
+<head>
+  <style>
+    body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+    .header { background-color: #dc3545; color: white; padding: 20px; text-align: center; }
+    .content { padding: 20px; }
+    .section { margin-bottom: 20px; background-color: #f8f9fa; padding: 15px; border-left: 4px solid #dc3545; }
+    .section-title { font-weight: bold; color: #dc3545; margin-bottom: 10px; font-size: 16px; }
+    .detail-row { margin: 5px 0; }
+    .label { font-weight: bold; display: inline-block; width: 200px; }
+    .warning { background-color: #fff3cd; border: 1px solid #ffc107; padding: 15px; margin: 20px 0; border-radius: 4px; }
+    .footer { background-color: #f5f5f5; padding: 15px; margin-top: 30px; text-align: center; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>🔧 SYSTEM ALERT: AVL Lookup Failed</h1>
+  </div>
+  
+  <div class="content">
+    <div class="warning">
+      <strong>⚠️ AVL Lookup Failure</strong><br>
+      The workflow attempted to find an Approved Vendor List (AVL) for 9COM number <strong>{{ $('Insert RFQ Request').first().json.nine_com_number || $('Process RFQ Data').first().json.nineComNumber }}</strong> but no matching record was found in the AVL master list. This may indicate a missing AVL entry or an incorrect 9COM number in the procurement request.
+    </div>
+    
+    <div class="section">
+      <div class="section-title">RFQ Information</div>
+      <div class="detail-row"><span class="label">RFQ ID:</span> {{ $('Process RFQ Data').first().json.rfqId }}</div>
+      <div class="detail-row"><span class="label">9COM Number:</span> <strong>{{ $('Insert RFQ Request').first().json.nine_com_number || $('Process RFQ Data').first().json.nineComNumber }}</strong></div>
+      <div class="detail-row"><span class="label">Project Name:</span> {{ $('Insert RFQ Request').first().json.project_name || $('Process RFQ Data').first().json.projectName }}</div>
+      <div class="detail-row"><span class="label">Project ID:</span> {{ $('Process RFQ Data').first().json.projectId || 'Not specified' }}</div>
+      <div class="detail-row"><span class="label">Material Description:</span> {{ $('Insert RFQ Request').first().json.material_description || $('Process RFQ Data').first().json.materialDescription }}</div>
+      <div class="detail-row"><span class="label">Retry Attempts:</span> {{ $json.retryCount || 0 }}</div>
+    </div>
+    
+    <div class="section">
+      <div class="section-title">Possible Causes</div>
+      <ul>
+        <li>The 9COM number <strong>{{ $('Insert RFQ Request').first().json.nine_com_number || $('Process RFQ Data').first().json.nineComNumber }}</strong> does not exist in the AVL master list</li>
+        <li>The 9COM number was incorrectly extracted from the procurement memo</li>
+        <li>The AVL master list in Google Sheets is missing this commodity entry</li>
+        <li>There is a formatting mismatch between the extracted 9COM number and the master list</li>
+      </ul>
+    </div>
+    
+    <div class="section">
+      <div class="section-title">📋 Recommended Actions</div>
+      <ol>
+        <li><strong>Verify the 9COM number</strong> in the Google Sheets AVL master list</li>
+        <li><strong>Check the original procurement memo</strong> to confirm the 9COM number is correct</li>
+        <li><strong>Review the AI extraction quality</strong> to ensure accurate data capture</li>
+        <li><strong>Add missing AVL entries</strong> to the master list if this is a new commodity</li>
+        <li><strong>Improve the AVL matching logic</strong> if formatting issues are causing lookup failures</li>
+        <li><strong>Notify the procurement team</strong> that manual vendor selection is required for this RFQ</li>
+      </ol>
+    </div>
+    
+    <div class="section">
+      <div class="section-title">System Details</div>
+      <div class="detail-row"><span class="label">Workflow Execution ID:</span> {{ $execution.id }}</div>
+      <div class="detail-row"><span class="label">Timestamp:</span> {{ $now }}</div>
+      <div class="detail-row"><span class="label">RFQ Status:</span> Pending AVL Assignment</div>
+      <div class="detail-row"><span class="label">Procurement Team Notified:</span> Yes</div>
+    </div>
+  </div>
+  
+  <div class="footer">
+    <p>This is an automated system alert from the RFQ Workflow Automation System.</p>
+    <p>Please investigate and resolve this issue to improve future AVL lookups.</p>
+  </div>
+</body>
+</html>
