@@ -198,3 +198,135 @@ LIMIT 20;
 - **Scenarios C & D need manual intervention** (20% - show as alerts!)
 - The workflow name in n8n is "RFQ Main Processor - Production v1"
 - All test data is already in the database from our testing
+
+---
+
+## APPENDIX: Actual Database Contents by Scenario
+
+### 📊 Scenario A Database Tables
+
+#### Table: rfq_requests
+| rfq_id | project_name | status | vendor_count | commodity_code | quantity | response_deadline |
+|--------|--------------|--------|--------------|----------------|----------|-------------------|
+| RFQ-2024-11-001 | Project Eagle - Aramco Site 7 Expansion | awaiting_responses | 3 | 450-012547 | 1 | 2025-11-16 |
+
+**Additional columns**: `nine_com_number`: "450-012547, 680-009132", `material_description`: "High-Pressure Shell & Tube Heat Exchanger; 6\" Pipe Fittings, Schedule 40", `wbs_code`: "PEA7PRC01"
+
+#### Table: rfq_events (3 rows)
+| rfq_id | event_type | vendor_name | vendor_email | event_timestamp |
+|--------|------------|-------------|--------------|-----------------|
+| RFQ-2024-11-001 | email_sent | Vendor A Industries | vendor.a.demo@gmail.com | 2025-11-09 11:57:41 |
+| RFQ-2024-11-001 | email_sent | Vendor B Solutions | vendor.b.demo@gmail.com | 2025-11-09 11:57:41 |
+| RFQ-2024-11-001 | email_sent | Vendor C Global | vendor.c.demo@gmail.com | 2025-11-09 11:57:41 |
+
+#### Table: vendors (3 rows)
+| vendor_id | vendor_name | vendor_email | is_active | last_contacted |
+|-----------|-------------|--------------|-----------|----------------|
+| 9V-1053 | Vendor A Industries | vendor.a.demo@gmail.com | true | 2025-11-09 11:57:39 |
+| 9V-1054 | Vendor B Solutions | vendor.b.demo@gmail.com | true | 2025-11-09 11:57:39 |
+| 9V-1055 | Vendor C Global | vendor.c.demo@gmail.com | true | 2025-11-09 11:57:39 |
+
+#### Table: workflow_executions
+| workflow_name | rfq_id | status | vendor_count | started_at |
+|---------------|--------|--------|--------------|------------|
+| RFQ Generation | RFQ-2024-11-001 | success | 3 | 2025-11-09 11:57:41 |
+
+---
+
+### 📊 Scenario B Database Tables
+
+#### Table: rfq_requests
+| rfq_id | project_name | status | vendor_count | commodity_code | quantity | response_deadline |
+|--------|--------------|--------|--------------|----------------|----------|-------------------|
+| RFQ-2024-11-002 | Project Eagle - Aramco Site 7 Expansion | awaiting_responses | 3 | 450-012547 | 2 | 2025-11-16 |
+
+**Note**: Same as Scenario A but `quantity`: 2 and different `wbs_code`: "PEA7PRC02"
+
+#### Table: rfq_events (6 new rows for Scenario B)
+| rfq_id | event_type | vendor_name | vendor_email | event_timestamp |
+|--------|------------|-------------|--------------|-----------------|
+| RFQ-2024-11-002 | email_sent | Vendor A Industries | vendor.a.demo@gmail.com | ~19:07:56 |
+| RFQ-2024-11-002 | email_sent | Vendor B Solutions | vendor.b.demo@gmail.com | ~19:07:56 |
+| RFQ-2024-11-002 | email_sent | Vendor C Global | vendor.c.demo@gmail.com | ~19:07:56 |
+| RFQ-2024-11-002 | email_sent | Vendor D Test Corp | vendor.d_test@yahoo.com | ~19:07:56 |
+| RFQ-2024-11-002 | email_sent | Vendor E Supplies | vendor.e_test@outlook.com | ~19:07:56 |
+| RFQ-2024-11-002 | email_sent | Vendor F Industries | vendor.f_test@outlook.com | ~19:07:56 |
+
+#### Table: vendors (3 new rows added)
+| vendor_id | vendor_name | vendor_email | is_active | last_contacted |
+|-----------|-------------|--------------|-----------|----------------|
+| 9V-XXXX | Vendor D Test Corp | vendor.d_test@yahoo.com | true | 2025-11-09 ~19:07 |
+| 9V-XXXX | Vendor E Supplies | vendor.e_test@outlook.com | true | 2025-11-09 ~19:07 |
+| 9V-XXXX | Vendor F Industries | vendor.f_test@outlook.com | true | 2025-11-09 ~19:07 |
+
+**Plus**: Vendors A, B, C updated with new `last_contacted` timestamp
+
+#### Table: workflow_executions (2 new rows - split execution)
+| workflow_name | rfq_id | status | vendor_count | notes |
+|---------------|--------|--------|--------------|-------|
+| RFQ Generation | RFQ-2024-11-002 | success | 3 | First batch |
+| RFQ Generation | RFQ-2024-11-002 | success | 3 | Second batch |
+
+---
+
+### 📊 Scenario C Database Tables
+
+#### Table: rfq_requests
+| rfq_id | project_name | status | vendor_count | commodity_code | quantity |
+|--------|--------------|--------|--------------|----------------|----------|
+| RFQ-2024-11-003 | Emergency Valve Replacement | **pending_avl** | **0** | 555-000001 | 5 |
+
+**Key difference**: `status` = "pending_avl" and `vendor_count` = 0
+
+#### Table: rfq_events (1 row)
+| rfq_id | event_type | vendor_name | vendor_email | event_timestamp | title |
+|--------|------------|-------------|--------------|-----------------|-------|
+| RFQ-2024-11-003 | **avl_not_found** | NULL | NULL | ~timestamp | AVL Lookup Failed - Manual Assignment Required |
+
+**Note**: No vendors found, so vendor fields are NULL
+
+#### Table: vendors
+**No new rows added** (no vendors found to create/update)
+
+#### Table: workflow_executions
+| workflow_name | rfq_id | status | vendor_count |
+|---------------|--------|--------|--------------|
+| RFQ Generation | RFQ-2024-11-003 | success | **0** |
+
+---
+
+### 📊 Scenario D Database Tables
+
+#### Table: rfq_requests
+**NO ROWS ADDED** - Quality check failed before RFQ creation
+
+#### Table: extraction_quality_issues (1 row)
+| rfq_id | quality_score | missing_fields | status | extraction_method |
+|--------|---------------|----------------|--------|-------------------|
+| NULL | 0 | ["nineComNumber", "projectName", "quantity"] | pending_manual_review | email_body |
+
+**Key fields**: Shows what was missing that caused failure
+
+#### Table: rfq_events
+**NO ROWS ADDED** - Workflow stopped before any events
+
+#### Table: vendors
+**NO ROWS ADDED** - Workflow stopped before vendor lookup
+
+#### Table: workflow_executions
+| workflow_name | rfq_id | status | vendor_count |
+|---------------|--------|--------|--------------|
+| RFQ Generation | **NULL** | success | **NULL** |
+
+**Note**: Workflow technically succeeded but no RFQ was created
+
+---
+
+### 🎯 Summary Table: What Gets Created Per Scenario
+
+| Scenario | rfq_requests | rfq_events | vendors | workflow_executions | extraction_quality_issues |
+|----------|--------------|------------|---------|---------------------|---------------------------|
+| **A** | ✅ 1 row (status: awaiting) | ✅ 3 rows (email_sent) | ✅ 3 created | ✅ 1 row | ❌ None |
+| **B** | ✅ 1 row (status: awaiting) | ✅ 6 rows (email_sent) | ✅ 3 new + 3 updated | ✅ 2 rows (split) | ❌ None |
+| **C** | ✅ 1 row (status: pending_avl) | ✅ 1 row (avl_not_found) | ❌ None | ✅ 1 row | ❌ None |
+| **D** | ❌ None | ❌ None | ❌ None | ✅ 1 row (rfq_id: NULL) | ✅ 1 row |
