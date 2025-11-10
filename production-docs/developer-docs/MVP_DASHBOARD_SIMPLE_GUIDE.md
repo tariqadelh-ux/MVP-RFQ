@@ -3,15 +3,16 @@
 ## What This System Does
 The RFQ system automatically processes procurement request emails and sends them to qualified vendors.
 
-## The Workflow "Dominos" (Process Steps)
+## The Workflow "Dominos" (Process Steps - Phase 1)
 Think of each RFQ as going through these steps like falling dominos:
 
 ```
-📧 Email Received → 🤖 AI Extraction → ✅ Quality Check → 📋 Create RFQ → 
-🔍 Find Vendors → 📤 Send Emails → ⏳ Await Responses
+📋 RFQ Created → 🔍 Vendors Found → 📤 Emails Sent → ⏳ Awaiting
 ```
 
 **Your dashboard should show where each RFQ is in this process!**
+
+*Note: This is the simplified business view. The system does more behind the scenes (AI extraction, quality checks, etc.) but users only see these 4 major milestones.*
 
 ---
 
@@ -63,14 +64,20 @@ Think of each RFQ as going through these steps like falling dominos:
 ## Simple Dashboard Layout
 
 ### 1. Main View - RFQ Pipeline (The Dominos Tracker)
-Show each RFQ as a card moving through stages:
+Show each RFQ as a card moving through the 4 stages:
 
 ```
 ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐
-│  INITIATED  │→ │ PROCESSING  │→ │VENDORS FOUND│→ │EMAILS SENT  │
-│      2      │  │      1      │  │      0      │  │      3      │
+│ RFQ CREATED │→ │VENDORS FOUND│→ │EMAILS SENT  │→ │  AWAITING   │
+│      2      │  │      1      │  │      3      │  │      5      │
 └─────────────┘  └─────────────┘  └─────────────┘  └─────────────┘
 ```
+
+Visual indicators:
+- ✅ Completed (green background)
+- 🔵 Active/Current (blue pulsing)
+- ⭕ Pending (gray)
+- ⚠️ Error/Stuck (red - for pending_avl status)
 
 ### 2. Alerts Section (Top of Dashboard)
 ```
@@ -129,12 +136,41 @@ FROM extraction_quality_issues WHERE status = 'pending_manual_review';
 
 ### Get Pipeline Counts (For Dominos View)
 ```sql
+-- Based on Phase 1 tracker from technical spec
 SELECT 
-  COUNT(CASE WHEN status = 'initiated' THEN 1 END) as initiated,
-  COUNT(CASE WHEN vendor_count = 0 THEN 1 END) as finding_vendors,
-  COUNT(CASE WHEN vendor_count > 0 AND status = 'awaiting_responses' THEN 1 END) as emails_sent
+  COUNT(CASE WHEN created_at IS NOT NULL THEN 1 END) as rfq_created,
+  COUNT(CASE WHEN vendor_count > 0 THEN 1 END) as vendors_found,
+  COUNT(CASE WHEN rfq_sent_at IS NOT NULL THEN 1 END) as emails_sent,
+  COUNT(CASE WHEN status = 'awaiting_responses' THEN 1 END) as awaiting
 FROM rfq_requests
 WHERE created_at > NOW() - INTERVAL '7 days';
+```
+
+### Get Individual RFQ Stage Status
+```sql
+-- Determine which domino/stage an RFQ is at
+SELECT 
+  rfq_id,
+  CASE 
+    WHEN created_at IS NOT NULL THEN 'completed'
+    ELSE 'pending'
+  END as rfq_created,
+  CASE 
+    WHEN vendor_count > 0 THEN 'completed'
+    WHEN status = 'pending_avl' THEN 'error'
+    ELSE 'pending'
+  END as vendors_found,
+  CASE 
+    WHEN rfq_sent_at IS NOT NULL THEN 'completed'
+    ELSE 'pending'
+  END as emails_sent,
+  CASE 
+    WHEN status = 'awaiting_responses' THEN 'active'
+    WHEN status = 'pending_avl' THEN 'error'
+    ELSE 'pending'
+  END as awaiting
+FROM rfq_requests
+WHERE rfq_id = ?;
 ```
 
 ### Get Activity Timeline
