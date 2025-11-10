@@ -20,7 +20,7 @@ Think of each RFQ as going through these steps like falling dominos:
 ### 🟢 Scenario A: Everything Works Perfectly
 **What happens**: Email with PDF attachment → AI extracts all data → Finds 3 vendors → Sends 3 emails
 
-**Database Impact**:
+**Database Impact**: *(See Appendix for exact table contents)*
 - `rfq_requests`: 1 new RFQ (status: "awaiting_responses", vendor_count: 3)
 - `vendors`: Creates/updates Vendor A, B, C
 - `rfq_events`: 3 "email_sent" events
@@ -29,7 +29,7 @@ Think of each RFQ as going through these steps like falling dominos:
 ### 🟡 Scenario B: No PDF (Email Text Only) 
 **What happens**: Email without attachment → AI extracts from email body → Same outcome as A
 
-**Database Impact**:
+**Database Impact**: *(See Appendix for exact table contents)*
 - `rfq_requests`: 1 new RFQ (identical to Scenario A)
 - `vendors`: Reuses A,B,C + Creates new D,E,F (total 6 vendors now)
 - `rfq_events`: 3 "email_sent" events (but with vendor duplicates issue - known bug)
@@ -40,7 +40,7 @@ Think of each RFQ as going through these steps like falling dominos:
 ### 🔴 Scenario C: No Vendors Found
 **What happens**: Email processed → AI extracts → NO vendors in Google Sheets → Alerts sent
 
-**Database Impact**:
+**Database Impact**: *(See Appendix for exact table contents)*
 - `rfq_requests`: 1 new RFQ (status: "pending_avl", vendor_count: 0) ⚠️
 - `vendors`: No new vendors
 - `rfq_events`: 1 "avl_not_found" event
@@ -51,7 +51,7 @@ Think of each RFQ as going through these steps like falling dominos:
 ### ⚫ Scenario D: Poor Quality Data
 **What happens**: Vague email → AI can't extract required fields → Stops early → Dev notified
 
-**Database Impact**:
+**Database Impact**: *(See Appendix for exact table contents)*
 - `rfq_requests`: NO entry (never created)
 - `extraction_quality_issues`: 1 entry with details of what's missing
 - `workflow_executions`: 1 entry (rfq_id is NULL)
